@@ -1,7 +1,42 @@
+// 預設訪問密碼
+const ACCESS_PASSWORD = "coscourse";
+
+// 檢查密碼邏輯
+function verifyPassword(e) {
+    if (e) e.preventDefault();
+    const inputPass = document.getElementById('sys-password').value;
+    const errorElem = document.getElementById('lock-error');
+
+    if (inputPass === ACCESS_PASSWORD) {
+        localStorage.setItem('tennis_app_authenticated', 'true');
+        document.getElementById('lock-screen').style.display = 'none';
+        document.getElementById('app-content').style.display = 'block';
+        if (errorElem) errorElem.style.display = 'none';
+    } else {
+        if (errorElem) errorElem.style.display = 'block';
+    }
+}
+
+// 登出功能
+function logoutSystem() {
+    localStorage.removeItem('tennis_app_authenticated');
+    location.reload();
+}
+
+// 初始化密碼檢查
+(function checkAuth() {
+    const isAuth = localStorage.getItem('tennis_app_authenticated');
+    if (isAuth === 'true') {
+        document.getElementById('lock-screen').style.display = 'none';
+        document.getElementById('app-content').style.display = 'block';
+    }
+})();
+
 // 你的 Firebase 金鑰設定
 const firebaseConfig = {
   apiKey: "AIzaSyBpIGPINFR9DzrRSMHX4DS9UF_pz0AP30",
   authDomain: "tennis-package.firebaseapp.com",
+  databaseURL: "https://tennis-package-default-rtdb.firebaseio.com",
   projectId: "tennis-package",
   storageBucket: "tennis-package.firebasestorage.app",
   messagingSenderId: "897402153829",
