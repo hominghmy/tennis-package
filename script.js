@@ -126,14 +126,14 @@ function switchTab(tabId) {
 document.getElementById('student-form').addEventListener('submit', function(e) {
     e.preventDefault();
     const name = document.getElementById('name').value.trim();
-    const phone = document.getElementById('phone').value.trim();
+    const studentId = document.getElementById('student-id').value.trim();
     const payment = document.getElementById('payment').value;
     const totalPackage = parseInt(document.getElementById('total-package').value);
 
     const newStudent = {
         id: Date.now(),
         name,
-        phone,
+        studentId,
         payment,
         totalPackage,
         bookings: []
@@ -150,7 +150,10 @@ function renderStudents() {
     const search = searchInput ? searchInput.value.toLowerCase() : '';
     list.innerHTML = '';
 
-    const filtered = students.filter(s => s.name.toLowerCase().includes(search));
+    const filtered = students.filter(s => 
+        s.name.toLowerCase().includes(search) || 
+        (s.studentId && s.studentId.toLowerCase().includes(search))
+    );
 
     if (filtered.length === 0) {
         list.innerHTML = '<p style="text-align:center; color:#94a3b8; padding:1rem;">尚無學員資料</p>';
@@ -176,7 +179,7 @@ function renderStudents() {
         card.innerHTML = `
             <div class="student-header">
                 <div>
-                    <strong>${s.name}</strong> (${s.phone || '無電話'})
+                    <strong>${s.name}</strong> <span style="color:#64748b; font-size:0.9rem;">(編號: ${s.studentId || '無'})</span>
                     <span class="badge ${s.payment === '已付款' ? 'paid' : 'unpaid'}">${s.payment}</span>
                 </div>
                 <button class="btn danger sm" onclick="deleteStudent('${s.fbKey}')">刪除學員</button>
@@ -385,7 +388,7 @@ function renderSchedule() {
                     b.className === item.class && 
                     b.time === item.time
                 );
-                if (hasBooking) matchedStudents.push(s.name);
+                if (hasBooking) matchedStudents.push(`${s.name} (${s.studentId || '無學號'})`);
             }
         });
 
@@ -398,7 +401,7 @@ function renderSchedule() {
             </div>
             <div class="student-tag-list">
                 ${matchedStudents.length > 0 
-                    ? matchedStudents.map(name => `<span class="student-tag">👤 ${name}</span>`).join('') 
+                    ? matchedStudents.map(info => `<span class="student-tag">👤 ${info}</span>`).join('') 
                     : '<span style="color:#94a3b8; font-size:0.85rem;">目前尚無已付款學員預約</span>'}
             </div>
         `;
