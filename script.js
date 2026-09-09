@@ -32,9 +32,9 @@ function logoutSystem() {
     }
 })();
 
-// 正確的 Firebase 金鑰設定（已修正 API Key）
+// 你的 Firebase 金鑰設定
 const firebaseConfig = {
-  apiKey: "AIzaSyBoIgPFNER9DzzRSMXhX4DS9UF_pz9AP30",
+  apiKey: "AIzaSyBpIGPINFR9DzrRSMHX4DS9UF_pz0AP30",
   authDomain: "tennis-package.firebaseapp.com",
   databaseURL: "https://tennis-package-default-rtdb.firebaseio.com",
   projectId: "tennis-package",
@@ -143,7 +143,7 @@ document.getElementById('student-form').addEventListener('submit', function(e) {
     this.reset();
 });
 
-// 渲染學員列表（支援姓名與學生編號搜尋）
+// 渲染學員列表
 function renderStudents() {
     const list = document.getElementById('student-list');
     const searchInput = document.getElementById('search-student');
