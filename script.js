@@ -11,13 +11,23 @@ const firebaseConfig = {
 };
 
 // 初始化 Firebase
-firebase.initializeApp(firebaseConfig);
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+
 const db = firebase.database();
 const auth = firebase.auth();
 const studentsRef = db.ref('tennis_club_students');
 
 let isAdmin = false;
 let students = [];
+
+// 監聽 Firebase 網路連線狀態
+db.ref('.info/connected').on('value', (snap) => {
+    if (snap.val() === false) {
+        document.getElementById('sync-status').textContent = '🔴 斷線或存取拒絕';
+    }
+});
 
 // 監聽管理員登入狀態變更
 auth.onAuthStateChanged(user => {
@@ -102,7 +112,7 @@ const WEEKLY_SCHEDULE = {
 // 預設檢視日期為今天
 document.getElementById('schedule-date').value = new Date().toISOString().split('T')[0];
 
-// 監聽 Firebase 資料庫即時變更
+// 監聽 Firebase 資料庫即時變更（加上錯誤處理）
 studentsRef.on('value', (snapshot) => {
     const data = snapshot.val();
     students = [];
@@ -118,6 +128,9 @@ studentsRef.on('value', (snapshot) => {
     document.getElementById('sync-status').textContent = '🟢 已雲端同步';
     renderStudents();
     renderSchedule();
+}, (error) => {
+    console.error("Firebase 讀取失敗:", error);
+    document.getElementById('sync-status').textContent = '🔴 權限拒絕/連線失敗';
 });
 
 function switchTab(tabId) {
@@ -125,7 +138,9 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     
     document.getElementById(tabId).classList.add('active');
-    event.target.classList.add('active');
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
 
     if (tabId === 'tab-schedule') {
         renderSchedule();
@@ -155,7 +170,7 @@ document.getElementById('student-form').addEventListener('submit', function(e) {
     this.reset();
 });
 
-// 渲染學員列表 (可搜尋姓名或學生編號)
+// 渲染學員列表
 function renderStudents() {
     const list = document.getElementById('student-list');
     const searchInput = document.getElementById('search-student');
@@ -163,7 +178,7 @@ function renderStudents() {
     list.innerHTML = '';
 
     const filtered = students.filter(s => 
-        s.name.toLowerCase().includes(search) || 
+        (s.name && s.name.toLowerCase().includes(search)) || 
         (s.studentId && s.studentId.toLowerCase().includes(search))
     );
 
