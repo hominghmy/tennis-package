@@ -110,7 +110,7 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
     });
 });
 
-// 6. 渲染學員列表 (已改為依日期時序性自動排序)
+// 6. 渲染學員列表 (含修改與取消預約按鈕)
 function renderStudents() {
   const listContainer = document.getElementById("student-list");
   const keyword = document.getElementById("search-student").value.toLowerCase();
@@ -137,7 +137,7 @@ function renderStudents() {
 
       let bookingsHtml = "";
       if (student.bookings) {
-        // 轉為陣列並按日期/時間升序 (舊到新/時序性) 排序
+        // 按日期由早到晚排序
         const bookingList = Object.keys(student.bookings).map(bKey => ({
           key: bKey,
           ...student.bookings[bKey]
@@ -153,7 +153,10 @@ function renderStudents() {
           bookingsHtml += `
             <div class="date-chip">
               <span>📅 ${booking.date} | ${booking.className || booking.time}</span>
-              <button class="btn danger sm" style="padding:0px 4px; margin-left: 5px;" onclick="deleteBooking('${id}', '${booking.key}')">✕</button>
+              <div style="display: flex; gap: 2px; margin-left: 6px;">
+                <button class="btn warning sm" style="padding:0px 4px;" title="修改預約" onclick="openEditBookingModal('${id}', '${booking.key}', '${booking.date}', '${booking.className || ''}')">✏️</button>
+                <button class="btn danger sm" style="padding:0px 4px;" title="取消預約" onclick="deleteBooking('${id}', '${booking.key}')">✕</button>
+              </div>
             </div>
           `;
         });
@@ -246,7 +249,102 @@ function deleteBooking(studentId, bookingKey) {
   }
 }
 
-// 9. 多堂預約彈窗控制
+// 9. 開啟「修改單一預約」彈窗
+function openEditBookingModal(studentId, bookingKey, currentDate, currentClass) {
+  const student = studentsData[studentId];
+  if (!student) return;
+
+  document.getElementById("modal-title").innerText = `修改 ${student.name} 的預約紀錄`;
+  document.getElementById("modal-body").innerHTML = `
+    <div style="padding: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;">
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem;">選擇新日期：</label>
+        <input type="date" id="edit-booking-date" value="${currentDate}" onchange="updateEditClassOptions()" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+        <span id="edit-date-hint" style="font-size: 0.8rem; color: #64748b; margin-top: 2px; display: block;"></span>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem;">選擇新班別/時段：</label>
+        <select id="edit-booking-class" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+          <option value="">請選擇日子</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="btn primary" style="width: 100%; font-size: 1rem; padding: 0.6rem; margin-top: 1rem;" onclick="submitEditBooking('${studentId}', '${bookingKey}')">確認儲存修改</button>
+  `;
+
+  document.getElementById("booking-modal").style.display = "flex";
+  
+  // 初始化日期與對應班別
+  updateEditClassOptions(currentClass);
+}
+
+// 修改預約彈窗的班別下拉選單更新
+function updateEditClassOptions(presetClass = "") {
+  const dateInput = document.getElementById("edit-booking-date").value;
+  const classSelect = document.getElementById("edit-booking-class");
+  const hint = document.getElementById("edit-date-hint");
+
+  if (!dateInput) {
+    classSelect.innerHTML = `<option value="">請選擇日子</option>`;
+    hint.innerText = "";
+    return;
+  }
+
+  const parts = dateInput.split('-');
+  const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  const dayOfWeek = selectedDate.getDay();
+  const weekdayName = WEEKDAY_NAMES[dayOfWeek];
+
+  hint.innerText = `💡 ${weekdayName}`;
+
+  const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
+
+  if (availableClasses.length === 0) {
+    classSelect.innerHTML = `<option value="">當日無可選擇之班別</option>`;
+  } else {
+    classSelect.innerHTML = availableClasses
+      .map(c => `<option value="${weekdayName} ${c}">${c}</option>`)
+      .join("");
+
+    if (presetClass) {
+      for (let opt of classSelect.options) {
+        if (opt.value === presetClass) {
+          classSelect.value = presetClass;
+          break;
+        }
+      }
+    }
+  }
+}
+
+// 提交修改預約到 Firebase
+function submitEditBooking(studentId, bookingKey) {
+  const newDate = document.getElementById("edit-booking-date").value;
+  const newClass = document.getElementById("edit-booking-class").value;
+
+  if (!newDate) {
+    alert("請選擇日期！");
+    return;
+  }
+  if (!newClass || newClass === "請選擇日子" || newClass === "當日無可選擇之班別") {
+    alert("請選擇有效的班別與時段！");
+    return;
+  }
+
+  database.ref(`students/${studentId}/bookings/${bookingKey}`).update({
+    date: newDate,
+    className: newClass
+  }).then(() => {
+    alert("預約修改成功！");
+    closeModal();
+  }).catch(err => {
+    alert("修改失敗：" + err.message);
+  });
+}
+
+// 10. 多堂預約彈窗控制
 function openBookingModal(studentId) {
   const student = studentsData[studentId];
   if (!student) return;
