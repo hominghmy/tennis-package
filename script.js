@@ -4,7 +4,7 @@ const firebaseConfig = {
   authDomain: "tennis-package.firebaseapp.com",
   databaseURL: "https://tennis-package-default-rtdb.firebaseio.com", // ⚠️ 必須包含 databaseURL
   projectId: "tennis-package",
-  storageBucket: "tennis-package.appspot.com",
+  storageBucket: "tennis-package.appstop.com",
   messagingSenderId: "897402153829",
   appId: "1:897402153829:web:18069dae9187cc554cf8c"
 };
@@ -131,7 +131,6 @@ function renderStudents() {
       const isPaid = student.payment === "已付款";
       const badgeClass = isPaid ? "badge paid" : "badge unpaid";
 
-      // 計算已預約堂數與剩餘堂數
       const bookedCount = student.bookings ? Object.keys(student.bookings).length : 0;
       const totalPackage = student.totalPackage || 0;
       const remainingCount = totalPackage - bookedCount;
@@ -269,42 +268,89 @@ function openBookingModal(studentId) {
   generateBookingRows(studentId);
 }
 
-// 動態生成 1~10 堂預約欄位，自動以每週 (7 天) 連續生成
+// 動態生成 1~10 堂預約欄位
 function generateBookingRows(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const container = document.getElementById("booking-rows-container");
   container.innerHTML = "";
 
-  const baseDate = new Date(); // 預設第 1 堂為今天
-
   for (let i = 0; i < count; i++) {
-    const rowDate = new Date(baseDate);
-    rowDate.setDate(baseDate.getDate() + (i * 7)); // 每堂間隔 7 天
-    const dateStr = rowDate.toISOString().split('T')[0];
-
     const rowDiv = document.createElement("div");
     rowDiv.style.cssText = "border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px; background: #fff;";
     rowDiv.innerHTML = `
       <div style="font-weight: bold; font-size: 0.85rem; color: #2563eb; margin-bottom: 4px;">第 ${i + 1} 堂：</div>
       <div style="display: flex; gap: 8px; align-items: center;">
-        <input type="date" id="row-date-${i}" value="${dateStr}" onchange="updateRowClassOptions(${i})" style="flex: 1; padding: 0.4rem; font-size: 0.85rem;">
-        <select id="row-class-${i}" style="flex: 1.5; padding: 0.4rem; font-size: 0.85rem;"></select>
+        <input type="date" id="row-date-${i}" value="" onchange="onDateChanged(${i})" style="flex: 1; padding: 0.4rem; font-size: 0.85rem;">
+        <select id="row-class-${i}" onchange="onClassChanged(${i})" style="flex: 1.5; padding: 0.4rem; font-size: 0.85rem;">
+          <option value="">請選擇日子</option>
+        </select>
       </div>
       <span id="row-hint-${i}" style="font-size: 0.75rem; color: #64748b;"></span>
     `;
     container.appendChild(rowDiv);
-    updateRowClassOptions(i);
   }
 }
 
-// 單一欄位根據日期動態更換班別
+// 日期變更處理：若修改第 1 堂，自動連動推算後面堂數 (每加 7 天)
+function onDateChanged(index) {
+  const count = parseInt(document.getElementById("booking-count").value, 10);
+  const selectedDateStr = document.getElementById(`row-date-${index}`).value;
+
+  updateRowClassOptions(index);
+
+  // 當修改「第 1 堂」日期時，自動連動推算後面堂數
+  if (index === 0 && selectedDateStr) {
+    const parts = selectedDateStr.split('-');
+    const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+
+    for (let i = 1; i < count; i++) {
+      const nextDate = new Date(baseDate);
+      nextDate.setDate(baseDate.getDate() + (i * 7));
+
+      const yyyy = nextDate.getFullYear();
+      const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(nextDate.getDate()).padStart(2, '0');
+      const nextDateStr = `${yyyy}-${mm}-${dd}`;
+
+      const dateInput = document.getElementById(`row-date-${i}`);
+      if (dateInput) {
+        dateInput.value = nextDateStr;
+        updateRowClassOptions(i);
+      }
+    }
+  }
+}
+
+// 班別變更處理：若修改第 1 堂班別，嘗試讓後面堂數選取同名稱班別
+function onClassChanged(index) {
+  if (index !== 0) return;
+  const count = parseInt(document.getElementById("booking-count").value, 10);
+  const selectedClass = document.getElementById("row-class-0").value;
+
+  if (!selectedClass) return;
+
+  for (let i = 1; i < count; i++) {
+    const selectElem = document.getElementById(`row-class-${i}`);
+    if (selectElem) {
+      // 若後面堂數也有相同時段班別則自動選取
+      for (let option of selectElem.options) {
+        if (option.value === selectedClass) {
+          selectElem.value = selectedClass;
+          break;
+        }
+      }
+    }
+  }
+}
+
+// 更新單一欄位的班別選項
 function updateRowClassOptions(index) {
   const dateInput = document.getElementById(`row-date-${index}`).value;
   const classSelect = document.getElementById(`row-class-${index}`);
   const hint = document.getElementById(`row-hint-${index}`);
 
   if (!dateInput) {
-    classSelect.innerHTML = `<option value="">請先選擇日期</option>`;
+    classSelect.innerHTML = `<option value="">請選擇日子</option>`;
     hint.innerText = "";
     return;
   }
@@ -321,9 +367,26 @@ function updateRowClassOptions(index) {
   if (availableClasses.length === 0) {
     classSelect.innerHTML = `<option value="">當日無可選擇之班別</option>`;
   } else {
+    const currentVal = classSelect.value;
     classSelect.innerHTML = availableClasses
       .map(c => `<option value="${weekdayName} ${c}">${c}</option>`)
       .join("");
+
+    // 嘗試保持之前選取的同一班別
+    const firstClassVal = document.getElementById("row-class-0") ? document.getElementById("row-class-0").value : "";
+    const targetVal = (index > 0 && firstClassVal) ? firstClassVal : currentVal;
+
+    let matched = false;
+    for (let opt of classSelect.options) {
+      if (opt.value === targetVal) {
+        classSelect.value = targetVal;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched && classSelect.options.length > 0) {
+      classSelect.selectedIndex = 0;
+    }
   }
 }
 
@@ -336,8 +399,12 @@ function submitMultipleBookings(studentId) {
     const date = document.getElementById(`row-date-${i}`).value;
     const selectedClass = document.getElementById(`row-class-${i}`).value;
 
-    if (!date || !selectedClass) {
-      alert(`第 ${i + 1} 堂尚未選擇完整日期或班別！`);
+    if (!date) {
+      alert(`第 ${i + 1} 堂尚未選擇日期！`);
+      return;
+    }
+    if (!selectedClass || selectedClass === "請選擇日子" || selectedClass === "當日無可選擇之班別") {
+      alert(`第 ${i + 1} 堂尚未選擇班別！`);
       return;
     }
 
