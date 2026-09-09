@@ -110,7 +110,7 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
     });
 });
 
-// 6. 渲染學員列表 (含剩餘堂數顯示)
+// 6. 渲染學員列表 (已改為依日期時序性自動排序)
 function renderStudents() {
   const listContainer = document.getElementById("student-list");
   const keyword = document.getElementById("search-student").value.toLowerCase();
@@ -137,13 +137,23 @@ function renderStudents() {
 
       let bookingsHtml = "";
       if (student.bookings) {
+        // 轉為陣列並按日期/時間升序 (舊到新/時序性) 排序
+        const bookingList = Object.keys(student.bookings).map(bKey => ({
+          key: bKey,
+          ...student.bookings[bKey]
+        })).sort((a, b) => {
+          if (a.date === b.date) {
+            return (a.className || "").localeCompare(b.className || "");
+          }
+          return (a.date || "").localeCompare(b.date || "");
+        });
+
         bookingsHtml = `<div class="dates-grid">`;
-        Object.keys(student.bookings).forEach(bKey => {
-          const booking = student.bookings[bKey];
+        bookingList.forEach(booking => {
           bookingsHtml += `
             <div class="date-chip">
               <span>📅 ${booking.date} | ${booking.className || booking.time}</span>
-              <button class="btn danger sm" style="padding:0px 4px; margin-left: 5px;" onclick="deleteBooking('${id}', '${bKey}')">✕</button>
+              <button class="btn danger sm" style="padding:0px 4px; margin-left: 5px;" onclick="deleteBooking('${id}', '${booking.key}')">✕</button>
             </div>
           `;
         });
@@ -291,14 +301,13 @@ function generateBookingRows(studentId) {
   }
 }
 
-// 日期變更處理：若修改第 1 堂，自動連動推算後面堂數 (每加 7 天)
+// 日期變更處理：修改第 1 堂連動後續堂數
 function onDateChanged(index) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const selectedDateStr = document.getElementById(`row-date-${index}`).value;
 
   updateRowClassOptions(index);
 
-  // 當修改「第 1 堂」日期時，自動連動推算後面堂數
   if (index === 0 && selectedDateStr) {
     const parts = selectedDateStr.split('-');
     const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
@@ -321,7 +330,7 @@ function onDateChanged(index) {
   }
 }
 
-// 班別變更處理：若修改第 1 堂班別，嘗試讓後面堂數選取同名稱班別
+// 班別變更處理：同步後面堂數班別
 function onClassChanged(index) {
   if (index !== 0) return;
   const count = parseInt(document.getElementById("booking-count").value, 10);
@@ -332,7 +341,6 @@ function onClassChanged(index) {
   for (let i = 1; i < count; i++) {
     const selectElem = document.getElementById(`row-class-${i}`);
     if (selectElem) {
-      // 若後面堂數也有相同時段班別則自動選取
       for (let option of selectElem.options) {
         if (option.value === selectedClass) {
           selectElem.value = selectedClass;
@@ -372,7 +380,6 @@ function updateRowClassOptions(index) {
       .map(c => `<option value="${weekdayName} ${c}">${c}</option>`)
       .join("");
 
-    // 嘗試保持之前選取的同一班別
     const firstClassVal = document.getElementById("row-class-0") ? document.getElementById("row-class-0").value : "";
     const targetVal = (index > 0 && firstClassVal) ? firstClassVal : currentVal;
 
