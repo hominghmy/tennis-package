@@ -1,38 +1,4 @@
-// 預設訪問密碼
-const ACCESS_PASSWORD = "coscourse";
-
-// 檢查密碼邏輯
-function verifyPassword(e) {
-    if (e) e.preventDefault();
-    const inputPass = document.getElementById('sys-password').value;
-    const errorElem = document.getElementById('lock-error');
-
-    if (inputPass === ACCESS_PASSWORD) {
-        localStorage.setItem('tennis_app_authenticated', 'true');
-        document.getElementById('lock-screen').style.display = 'none';
-        document.getElementById('app-content').style.display = 'block';
-        if (errorElem) errorElem.style.display = 'none';
-    } else {
-        if (errorElem) errorElem.style.display = 'block';
-    }
-}
-
-// 登出功能
-function logoutSystem() {
-    localStorage.removeItem('tennis_app_authenticated');
-    location.reload();
-}
-
-// 初始化密碼檢查
-(function checkAuth() {
-    const isAuth = localStorage.getItem('tennis_app_authenticated');
-    if (isAuth === 'true') {
-        document.getElementById('lock-screen').style.display = 'none';
-        document.getElementById('app-content').style.display = 'block';
-    }
-})();
-
-// 你的 Firebase 金鑰設定
+// Firebase 設定
 const firebaseConfig = {
   apiKey: "AIzaSyBpIGPINFR9DzrRSMHX4DS9UF_pz0AP30",
   authDomain: "tennis-package.firebaseapp.com",
@@ -47,9 +13,56 @@ const firebaseConfig = {
 // 初始化 Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const auth = firebase.auth();
 const studentsRef = db.ref('tennis_club_students');
 
-// 會所課表資料庫
+let isAdmin = false;
+let students = [];
+
+// 監聽管理員登入狀態變更
+auth.onAuthStateChanged(user => {
+    if (user) {
+        isAdmin = true;
+        document.getElementById('user-status-text').textContent = `🔓 管理員模式 (${user.email})`;
+        document.getElementById('login-btn').style.display = 'none';
+        document.getElementById('logout-btn').style.display = 'inline-block';
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+    } else {
+        isAdmin = false;
+        document.getElementById('user-status-text').textContent = '👀 目前模式：僅供檢視 (訪客)';
+        document.getElementById('login-btn').style.display = 'inline-block';
+        document.getElementById('logout-btn').style.display = 'none';
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+    }
+    renderStudents();
+});
+
+// 管理者登入彈窗開關
+function openLoginModal() {
+    document.getElementById('login-modal').style.display = 'flex';
+}
+
+function loginAdmin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const pass = document.getElementById('login-password').value;
+
+    auth.signInWithEmailAndPassword(email, pass)
+        .then(() => {
+            closeModal('login-modal');
+            document.getElementById('login-email').value = '';
+            document.getElementById('login-password').value = '';
+        })
+        .catch(err => {
+            alert('登入失敗：' + err.message);
+        });
+}
+
+function logoutAdmin() {
+    auth.signOut();
+}
+
+// 固定每週課表
 const WEEKLY_SCHEDULE = {
     1: [
         { class: "Red Ball", time: "15:30-16:30" },
@@ -86,12 +99,10 @@ const WEEKLY_SCHEDULE = {
     ]
 };
 
-let students = [];
-
-// 初始化預設日期為今天
+// 預設檢視日期為今天
 document.getElementById('schedule-date').value = new Date().toISOString().split('T')[0];
 
-// 監聽 Firebase 資料變更
+// 監聽 Firebase 資料庫即時變更
 studentsRef.on('value', (snapshot) => {
     const data = snapshot.val();
     students = [];
@@ -104,8 +115,7 @@ studentsRef.on('value', (snapshot) => {
             });
         });
     }
-    const syncElem = document.getElementById('sync-status');
-    if (syncElem) syncElem.textContent = '🟢 已雲端同步';
+    document.getElementById('sync-status').textContent = '🟢 已雲端同步';
     renderStudents();
     renderSchedule();
 });
@@ -122,9 +132,11 @@ function switchTab(tabId) {
     }
 }
 
-// 新增學員至 Firebase
+// 新增學員套票 (僅限管理員)
 document.getElementById('student-form').addEventListener('submit', function(e) {
     e.preventDefault();
+    if (!isAdmin) return alert('權限不足！請先登入管理者帳號。');
+
     const name = document.getElementById('name').value.trim();
     const studentId = document.getElementById('student-id').value.trim();
     const payment = document.getElementById('payment').value;
@@ -143,7 +155,7 @@ document.getElementById('student-form').addEventListener('submit', function(e) {
     this.reset();
 });
 
-// 渲染學員列表
+// 渲染學員列表 (可搜尋姓名或學生編號)
 function renderStudents() {
     const list = document.getElementById('student-list');
     const searchInput = document.getElementById('search-student');
@@ -169,10 +181,11 @@ function renderStudents() {
         let bookingsHTML = bookings.map(b => `
             <div class="date-chip">
                 <span>📅 ${b.date} <br><strong>[${b.className}]</strong> ${b.time}</span>
+                ${isAdmin ? `
                 <div style="display:flex; gap:0.2rem;">
                     <button class="btn warning sm" onclick="openRebookModal('${s.fbKey}', ${b.id})">改期</button>
                     <button class="btn danger sm" onclick="cancelBooking('${s.fbKey}', ${b.id})">取消</button>
-                </div>
+                </div>` : ''}
             </div>
         `).join('');
 
@@ -182,14 +195,15 @@ function renderStudents() {
                     <strong>${s.name}</strong> <span style="color:#64748b; font-size:0.9rem;">(編號: ${s.studentId || '無'})</span>
                     <span class="badge ${s.payment === '已付款' ? 'paid' : 'unpaid'}">${s.payment}</span>
                 </div>
-                <button class="btn danger sm" onclick="deleteStudent('${s.fbKey}')">刪除學員</button>
+                ${isAdmin ? `<button class="btn danger sm" onclick="deleteStudent('${s.fbKey}')">刪除學員</button>` : ''}
             </div>
             <p>已預約：<strong>${bookings.length}</strong> 堂 | 剩餘堂數：<strong>${remaining}</strong> / ${s.totalPackage} 堂</p>
+            ${isAdmin ? `
             <div style="margin-top: 0.5rem;">
                 ${remaining > 0 
                     ? `<button class="btn success sm" onclick="openBatchBookingModal('${s.fbKey}')">➕ 預約/排課 (可排 ${remaining} 堂)</button>` 
                     : '<span style="color:#dc2626; font-size:0.85rem; font-weight:bold;">⚠️ 套票堂數已全數預約完畢</span>'}
-            </div>
+            </div>` : ''}
             <div class="dates-grid">
                 ${bookingsHTML || '<p style="font-size:0.85rem; color:#94a3b8; grid-column: 1/-1;">尚無預約紀錄</p>'}
             </div>
@@ -221,6 +235,7 @@ function onBookingDateChange(index) {
 }
 
 function openBatchBookingModal(fbKey) {
+    if (!isAdmin) return;
     const student = students.find(s => s.fbKey === fbKey);
     const bookings = student.bookings || [];
     const remaining = student.totalPackage - bookings.length;
@@ -252,6 +267,8 @@ function openBatchBookingModal(fbKey) {
 
 function saveBatchBookings(e, fbKey, count) {
     e.preventDefault();
+    if (!isAdmin) return alert('權限不足！');
+
     const student = students.find(s => s.fbKey === fbKey);
     const currentBookings = [...(student.bookings || [])];
 
@@ -276,10 +293,11 @@ function saveBatchBookings(e, fbKey, count) {
         bookings: currentBookings
     });
 
-    closeModal();
+    closeModal('booking-modal');
 }
 
 function cancelBooking(fbKey, bookingId) {
+    if (!isAdmin) return alert('權限不足！');
     if (confirm('確定要取消這個預約時間嗎？額度會自動退回。')) {
         const student = students.find(s => s.fbKey === fbKey);
         const updatedBookings = (student.bookings || []).filter(b => b.id !== bookingId);
@@ -291,6 +309,7 @@ function cancelBooking(fbKey, bookingId) {
 }
 
 function openRebookModal(fbKey, bookingId) {
+    if (!isAdmin) return;
     const student = students.find(s => s.fbKey === fbKey);
     const booking = (student.bookings || []).find(b => b.id === bookingId);
 
@@ -336,6 +355,8 @@ function onRebookDateChange() {
 
 function saveRebook(e, fbKey, bookingId) {
     e.preventDefault();
+    if (!isAdmin) return alert('權限不足！');
+
     const student = students.find(s => s.fbKey === fbKey);
     const currentBookings = [...(student.bookings || [])];
     const booking = currentBookings.find(b => b.id === bookingId);
@@ -355,7 +376,7 @@ function saveRebook(e, fbKey, bookingId) {
             bookings: currentBookings
         });
 
-        closeModal();
+        closeModal('booking-modal');
     }
 }
 
@@ -410,11 +431,12 @@ function renderSchedule() {
 }
 
 function deleteStudent(fbKey) {
+    if (!isAdmin) return alert('權限不足！');
     if (confirm('確定要刪除該學員所有資料嗎？')) {
         studentsRef.child(fbKey).remove();
     }
 }
 
-function closeModal() {
-    document.getElementById('booking-modal').style.display = 'none';
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
 }
