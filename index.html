@@ -1,381 +1,65 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>網球會所套票與排課管理系統</title>
+<!-- 引入 Firebase SDK (v9/v10 相容 CDN) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+<script>
+  // 1. Firebase 初始化設定 (請填入你的專案資訊，務必包含 databaseURL)
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "tennis-package.firebaseapp.com",
+    databaseURL: "https://tennis-package-default-rtdb.firebaseio.com", // ⚠️ 必須要有此行
+    projectId: "tennis-package",
+    storageBucket: "tennis-package.appspot.com",
+    messagingSenderId: "897402153829",
+    appId: "1:897402153829:web:18069dae9187cc554cf8c"
+  };
+
+  // 初始化 Firebase
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  const database = firebase.database();
+
+  // 2. 監聽 Firebase 數據庫連線狀態 (修復手機一直顯示連線中的問題)
+  const connectedRef = database.ref(".info/connected");
+  connectedRef.on("value", (snap) => {
+    const statusElement = document.getElementById("connection-status");
+    if (statusElement) {
+      if (snap.val() === true) {
+        statusElement.innerText = "🟢 已雲端同步";
+      } else {
+        statusElement.innerText = "🟡 連線中...";
+      }
+    }
+  });
+
+  // 3. 管理者密碼驗證登入邏輯
+  function handleAdminLogin() {
+    const inputPassword = prompt("請輸入管理者密碼：");
     
-    <!-- Firebase SDK (v8 相容版) -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    if (inputPassword === null) {
+      return; // 使用者點擊取消
+    }
 
-    <style>
-        :root {
-            --primary-color: #2563eb;
-            --success-color: #16a34a;
-            --warning-color: #d97706;
-            --danger-color: #dc2626;
-            --bg-color: #f8fafc;
-            --card-bg: #ffffff;
-            --text-color: #1e293b;
-            --border-color: #e2e8f0;
-        }
+    if (inputPassword === "coscourse") {
+      alert("登入成功！已開啟管理者權限。");
+      // 顯示管理者專用介面或解鎖編輯功能
+      document.body.classList.add("admin-mode");
+      
+      const adminPanel = document.getElementById("admin-panel");
+      if (adminPanel) {
+        adminPanel.style.display = "block";
+      }
+    } else {
+      alert("密碼錯誤，請重新輸入！");
+    }
+  }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            padding: 1rem;
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 1rem;
-            position: relative;
-        }
-
-        header h1 {
-            font-size: 1.5rem;
-            color: #0f172a;
-        }
-
-        #sync-status {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin-top: 0.3rem;
-        }
-
-        /* 身份驗證列 */
-        .auth-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #e2e8f0;
-            padding: 0.6rem 1rem;
-            border-radius: 6px;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid var(--border-color);
-        }
-
-        .tab-btn {
-            padding: 0.6rem 1.2rem;
-            border: none;
-            background: none;
-            font-size: 1rem;
-            font-weight: bold;
-            color: #64748b;
-            cursor: pointer;
-            border-bottom: 3px solid transparent;
-        }
-
-        .tab-btn.active {
-            color: var(--primary-color);
-            border-bottom-color: var(--primary-color);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .card {
-            background: var(--card-bg);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 0.8rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.3rem;
-        }
-
-        label {
-            font-size: 0.85rem;
-            font-weight: bold;
-            color: #475569;
-        }
-
-        input, select {
-            padding: 0.5rem;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            font-size: 0.95rem;
-        }
-
-        .btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 4px;
-            font-weight: bold;
-            cursor: pointer;
-            color: white;
-            transition: opacity 0.2s;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
-        }
-
-        .btn.primary { background-color: var(--primary-color); }
-        .btn.success { background-color: var(--success-color); }
-        .btn.warning { background-color: var(--warning-color); }
-        .btn.danger { background-color: var(--danger-color); }
-        .btn.sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
-
-        .student-card {
-            background: white;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 0.8rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .student-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
-
-        .badge.paid { background: #dcfce7; color: #15803d; }
-        .badge.unpaid { background: #fee2e2; color: #b91c1c; }
-
-        .dates-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-        }
-
-        .date-chip {
-            background: #f1f5f9;
-            padding: 0.4rem 0.6rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .class-slot-card {
-            background: white;
-            border-left: 4px solid var(--primary-color);
-            padding: 0.8rem;
-            margin-bottom: 0.8rem;
-            border-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-
-        .class-slot-header {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            margin-bottom: 0.5rem;
-            color: #0f172a;
-        }
-
-        .student-tag-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-        }
-
-        .student-tag {
-            background: #e0f2fe;
-            color: #0369a1;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.5);
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 1rem;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 8px;
-            width: 100%;
-            max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
-            padding: 1.2rem;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .booking-row {
-            background: #f8fafc;
-            padding: 0.6rem;
-            border-radius: 4px;
-            margin-bottom: 0.5rem;
-            border: 1px solid var(--border-color);
-        }
-
-        /* 預設隱藏管理員專屬區塊 */
-        .admin-only {
-            display: none;
-        }
-    </style>
-</head>
-<body>
-
-    <header>
-        <h1>🎾 網球會所套票與排課系統</h1>
-        <div id="sync-status">🟡 連線中...</div>
-    </header>
-
-    <!-- 管理員身分與登入列 -->
-    <div class="auth-bar">
-        <span id="user-status-text">👀 目前模式：僅供檢視 (訪客)</span>
-        <div>
-            <button id="login-btn" class="btn primary sm" onclick="openLoginModal()">管理者登入</button>
-            <button id="logout-btn" class="btn danger sm" onclick="logoutAdmin()" style="display:none;">登出管理者</button>
-        </div>
-    </div>
-
-    <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('tab-students')">👥 學員與套票管理</button>
-        <button class="tab-btn" onclick="switchTab('tab-schedule')">📅 日期課表總覽</button>
-    </div>
-
-    <!-- 分頁 1：學員管理 -->
-    <div id="tab-students" class="tab-content active">
-        <!-- 新增學員表單（僅限登入後的管理者可見） -->
-        <div class="card admin-only" id="admin-add-card">
-            <h3 style="margin-bottom: 0.8rem; font-size: 1.1rem;">新增學員套票</h3>
-            <form id="student-form">
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>學員姓名 *</label>
-                        <input type="text" id="name" required placeholder="例：張小明">
-                    </div>
-                    <div class="form-group">
-                        <label>學生編號 *</label>
-                        <input type="text" id="student-id" required placeholder="例：S1001">
-                    </div>
-                    <div class="form-group">
-                        <label>付款狀態</label>
-                        <select id="payment">
-                            <option value="已付款">已付款</option>
-                            <option value="未付款">未付款</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>購買套票堂數</label>
-                        <input type="number" id="total-package" min="1" value="10" required>
-                    </div>
-                </div>
-                <button type="submit" class="btn primary" style="width: 100%;">新增學員</button>
-            </form>
-        </div>
-
-        <!-- 學員搜尋與列表 -->
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-                <h3>學員名單與預約紀錄</h3>
-                <input type="text" id="search-student" placeholder="🔍 搜尋姓名或學號..." oninput="renderStudents()" style="width: 200px;">
-            </div>
-            <div id="student-list"></div>
-        </div>
-    </div>
-
-    <!-- 分頁 2：課表總覽 -->
-    <div id="tab-schedule" class="tab-content">
-        <div class="card">
-            <div class="form-group" style="max-width: 250px; margin-bottom: 1rem;">
-                <label>選擇檢視日期：</label>
-                <input type="date" id="schedule-date" onchange="renderSchedule()">
-            </div>
-            <div id="schedule-summary"></div>
-        </div>
-    </div>
-
-    <!-- 管理者登入彈窗 -->
-    <div id="login-modal" class="modal">
-        <div class="modal-content" style="max-width: 360px;">
-            <div class="modal-header">
-                <h3>🔑 管理者登入</h3>
-                <button onclick="closeModal('login-modal')" style="border:none; background:none; font-size:1.2rem; cursor:pointer;">✖</button>
-            </div>
-            <form onsubmit="loginAdmin(event)">
-                <div class="form-group" style="margin-bottom: 0.8rem;">
-                    <label>管理員 Email</label>
-                    <input type="email" id="login-email" required placeholder="admin@club.com">
-                </div>
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <label>密碼</label>
-                    <input type="password" id="login-password" required placeholder="請輸入密碼">
-                </div>
-                <button type="submit" class="btn primary" style="width: 100%; padding: 0.6rem;">登入</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- 預約/改期彈窗 -->
-    <div id="booking-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">預約上課</h3>
-                <button onclick="closeModal('booking-modal')" style="border:none; background:none; font-size:1.2rem; cursor:pointer;">✖</button>
-            </div>
-            <div id="modal-body"></div>
-        </div>
-    </div>
-
-    <!-- 載入腳本 -->
-    <script src="script.js"></script>
-</body>
-</html>
-<!-- index.html 底部調整 -->
-<script src="script.js"></script>
+  // 4. 綁定按鈕點擊事件 (確保點擊按鈕有反應)
+  document.addEventListener("DOMContentLoaded", () => {
+    const adminBtn = document.getElementById("admin-login-btn");
+    if (adminBtn) {
+      adminBtn.addEventListener("click", handleAdminLogin);
+    }
+  });
+</script>
