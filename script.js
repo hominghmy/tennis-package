@@ -81,7 +81,7 @@ function switchTab(tabId) {
   document.getElementById(tabId).classList.add("active");
 }
 
-// 5. 表單提交：新增/續購學員套票 (已加入自動累加舊套票堂數邏輯)
+// 5. 表單提交：新增/續購學員套票
 document.getElementById("student-form").addEventListener("submit", function(e) {
   e.preventDefault();
   
@@ -95,7 +95,6 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
   const existingStudent = studentsData[studentId];
 
   if (existingStudent) {
-    // 若學生已存在，累加套票堂數並保留原有的 bookings
     const updatedTotalPackage = (existingStudent.totalPackage || 0) + inputPackage;
 
     database.ref("students/" + studentId).update({
@@ -112,7 +111,6 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
     });
 
   } else {
-    // 新建學員資料
     const newStudent = {
       name: name,
       studentId: studentId,
@@ -132,7 +130,7 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
   }
 });
 
-// 6. 渲染學員列表 (含修改與取消預約按鈕)
+// 6. 渲染學員列表
 function renderStudents() {
   const listContainer = document.getElementById("student-list");
   const keyword = document.getElementById("search-student").value.toLowerCase();
@@ -159,7 +157,6 @@ function renderStudents() {
 
       let bookingsHtml = "";
       if (student.bookings) {
-        // 按日期由早到晚排序
         const bookingList = Object.keys(student.bookings).map(bKey => ({
           key: bKey,
           ...student.bookings[bKey]
@@ -210,7 +207,7 @@ function renderStudents() {
   });
 }
 
-// 7. 渲染日曆課表總覽
+// 7. 渲染日曆課表總覽 (依當日所有班別分類顯示)
 function renderSchedule() {
   const targetDate = document.getElementById("schedule-date").value;
   const summaryContainer = document.getElementById("schedule-summary");
@@ -218,7 +215,21 @@ function renderSchedule() {
 
   if (!targetDate) return;
 
-  let dailyBookings = [];
+  const parts = targetDate.split('-');
+  const selectedDateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  const dayOfWeek = selectedDateObj.getDay();
+  const weekdayName = WEEKDAY_NAMES[dayOfWeek];
+
+  const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
+
+  // 收集當天所有預約
+  let bookingsByClass = {};
+  availableClasses.forEach(c => {
+    bookingsByClass[c] = [];
+  });
+  bookingsByClass["其他/自訂班別"] = [];
+
+  let totalDailyCount = 0;
 
   Object.keys(studentsData).forEach(id => {
     const student = studentsData[id];
@@ -226,36 +237,83 @@ function renderSchedule() {
       Object.keys(student.bookings).forEach(bKey => {
         const booking = student.bookings[bKey];
         if (booking.date === targetDate) {
-          dailyBookings.push({
-            studentName: student.name,
-            studentId: id,
-            className: booking.className || booking.time || "全天"
-          });
+          totalDailyCount++;
+          let rawClassName = booking.className || booking.time || "";
+          
+          // 去除前綴的星期字樣，方便比對
+          let cleanClassName = rawClassName.replace(/^(星期[一二三四五六日]\s*)/, "").trim();
+
+          if (bookingsByClass[cleanClassName]) {
+            bookingsByClass[cleanClassName].push({ name: student.name, id: id });
+          } else {
+            bookingsByClass["其他/自訂班別"].push({ name: student.name, id: id, originalClass: rawClassName });
+          }
         }
       });
     }
   });
 
-  if (dailyBookings.length === 0) {
-    summaryContainer.innerHTML = `<p style="color: #64748b;">該日期（${targetDate}）無預約課表。</p>`;
+  // 渲染頂部總計列
+  const headerSummary = document.createElement("div");
+  headerSummary.style.cssText = "font-weight: bold; font-size: 1rem; color: #1e293b; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #2563eb;";
+  headerSummary.innerHTML = `
+    <span>📅 ${targetDate} (${weekdayName}) 所有班別課表</span>
+    <span style="color: #2563eb;">當日總人次：${totalDailyCount} 人次</span>
+  `;
+  summaryContainer.appendChild(headerSummary);
+
+  if (availableClasses.length === 0 && bookingsByClass["其他/自訂班別"].length === 0) {
+    summaryContainer.innerHTML += `<p style="color: #64748b; padding: 10px;">該日期（${weekdayName}）無排定班別。</p>`;
     return;
   }
 
-  const slotCard = document.createElement("div");
-  slotCard.className = "class-slot-card";
-  
-  let studentsHTML = dailyBookings.map(b => `<span class="student-tag">${b.studentName} - ${b.className}</span>`).join(" ");
+  // 遍歷當天每一個固定班別生成獨立卡片
+  availableClasses.forEach(className => {
+    const slotCard = document.createElement("div");
+    slotCard.className = "class-slot-card";
+    slotCard.style.cssText = "background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
 
-  slotCard.innerHTML = `
-    <div class="class-slot-header">
-      <span>📅 ${targetDate} 上課學員名單</span>
-      <span>共 ${dailyBookings.length} 人次</span>
-    </div>
-    <div class="student-tag-list">
-      ${studentsHTML}
-    </div>
-  `;
-  summaryContainer.appendChild(slotCard);
+    const students = bookingsByClass[className];
+    let studentsHTML = "";
+
+    if (students.length > 0) {
+      studentsHTML = students.map(s => `<span class="student-tag" style="display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; margin-right: 6px; margin-top: 6px;">👤 ${s.name} (${s.id})</span>`).join("");
+    } else {
+      studentsHTML = `<span style="font-size: 0.85rem; color: #94a3b8; font-style: italic;">尚無學員預約</span>`;
+    }
+
+    slotCard.innerHTML = `
+      <div class="class-slot-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 8px;">
+        <strong style="color: #0f172a; font-size: 0.95rem;">🎾 ${className}</strong>
+        <span style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 12px;">${students.length} 人</span>
+      </div>
+      <div class="student-tag-list">
+        ${studentsHTML}
+      </div>
+    `;
+    summaryContainer.appendChild(slotCard);
+  });
+
+  // 若有自訂或特殊班別
+  if (bookingsByClass["其他/自訂班別"].length > 0) {
+    const slotCard = document.createElement("div");
+    slotCard.className = "class-slot-card";
+    slotCard.style.cssText = "background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px;";
+
+    const students = bookingsByClass["其他/自訂班別"];
+    let studentsHTML = students.map(s => `<span class="student-tag" style="display: inline-block; background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; margin-right: 6px; margin-top: 6px;">👤 ${s.name} (${s.originalClass})</span>`).join("");
+
+    slotCard.innerHTML = `
+      <div class="class-slot-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 8px;">
+        <strong style="color: #d97706; font-size: 0.95rem;">📌 其他 / 自訂班別</strong>
+        <span style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 12px;">${students.length} 人</span>
+      </div>
+      <div class="student-tag-list">
+        ${studentsHTML}
+      </div>
+    `;
+    summaryContainer.appendChild(slotCard);
+  }
 }
 
 // 8. 刪除學員與預約
