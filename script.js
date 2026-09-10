@@ -402,7 +402,7 @@ function updateEditClassOptions(presetClass = "") {
   }
 }
 
-// 提交修改預約到 Firebase
+// 提交修改預約到 Firebase (含重複預約檢驗)
 function submitEditBooking(studentId, bookingKey) {
   const newDate = document.getElementById("edit-booking-date").value;
   const newClass = document.getElementById("edit-booking-class").value;
@@ -414,6 +414,21 @@ function submitEditBooking(studentId, bookingKey) {
   if (!newClass || newClass === "請選擇日子" || newClass === "當日無可選擇之班別") {
     alert("請選擇有效的班別與時段！");
     return;
+  }
+
+  // 檢查是否與該學生其他的預約重複 (排除自身正在修改的這一堂)
+  const student = studentsData[studentId];
+  if (student && student.bookings) {
+    const isDuplicate = Object.keys(student.bookings).some(bKey => {
+      if (bKey === bookingKey) return false; // 排除自身這堂紀錄
+      const b = student.bookings[bKey];
+      return b.date === newDate && (b.className || b.time) === newClass;
+    });
+
+    if (isDuplicate) {
+      alert(`⚠️ 預約失敗！\n該學員在 ${newDate} 已經預約過「${newClass}」，請勿重複預約。`);
+      return; // 終止修改流程
+    }
   }
 
   database.ref(`students/${studentId}/bookings/${bookingKey}`).update({
@@ -578,11 +593,13 @@ function updateRowClassOptions(index) {
   }
 }
 
-// 批量提交預約到 Firebase
+// 批量提交預約到 Firebase (含重複預約檢驗)
 function submitMultipleBookings(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
+  const student = studentsData[studentId];
   let newBookings = [];
 
+  // 1. 基本表單填寫檢查
   for (let i = 0; i < count; i++) {
     const date = document.getElementById(`row-date-${i}`).value;
     const selectedClass = document.getElementById(`row-class-${i}`).value;
@@ -596,13 +613,32 @@ function submitMultipleBookings(studentId) {
       return;
     }
 
-    newBookings.push({
-      date: date,
-      className: selectedClass
-    });
+    newBookings.push({ date: date, className: selectedClass });
   }
 
-  // 寫入 Firebase
+  // 2. 檢查本次提交清單內部是否有重複預約
+  for (let i = 0; i < newBookings.length; i++) {
+    for (let j = i + 1; j < newBookings.length; j++) {
+      if (newBookings[i].date === newBookings[j].date && newBookings[i].className === newBookings[j].className) {
+        alert(`⚠️ 預約失敗！\n您在輸入清單中選擇了兩次相同的時間：\n${newBookings[i].date} - ${newBookings[i].className}`);
+        return;
+      }
+    }
+  }
+
+  // 3. 檢查是否與資料庫中既有的預約紀錄重複
+  if (student && student.bookings) {
+    const existingBookings = Object.values(student.bookings);
+    for (let newB of newBookings) {
+      const isDuplicate = existingBookings.some(eB => eB.date === newB.date && (eB.className || eB.time) === newB.className);
+      if (isDuplicate) {
+        alert(`⚠️ 預約失敗！\n學員在 ${newB.date} 已經預約過「${newB.className}」，不可重複預約。`);
+        return;
+      }
+    }
+  }
+
+  // 4. 通過驗證，寫入 Firebase
   let promises = newBookings.map(b => {
     return database.ref(`students/${studentId}/bookings`).push().set(b);
   });
