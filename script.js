@@ -1,12 +1,4 @@
-// 自動動態載入 SheetJS 函式庫 (用於匯出 Excel)
-if (!document.getElementById("sheetjs-script")) {
-  const script = document.createElement("script");
-  script.id = "sheetjs-script";
-  script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
-  document.head.appendChild(script);
-}
-
-// 1. Firebase 初始化設定 (請填入你的 Firebase 專案設定)
+// Firebase 設定與初始化
 const firebaseConfig = {
   apiKey: "YOUR_API_KEY",
   authDomain: "tennis-package.firebaseapp.com",
@@ -17,16 +9,14 @@ const firebaseConfig = {
   appId: "1:897402153829:web:18069dae9187cc554cf8c"
 };
 
-// 初始化 Firebase
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
 const database = firebase.database();
 
-// 本地資料快取
 let studentsData = {};
+let currentSearchKeyword = ""; // 儲存當前搜尋關鍵字
 
-// 按星期幾分類的班別對照表 (0: 星期日, 1: 星期一, ..., 6: 星期六)
 const SCHEDULE_BY_DAY = {
   1: ["Red Ball 1530-1630", "Orange Ball 1630-1730", "Green Ball 1730-1900"],
   2: ["Red Ball 1630-1730", "Orange Ball 1730-1830", "Green Ball 1830-2000"],
@@ -39,7 +29,7 @@ const SCHEDULE_BY_DAY = {
 
 const WEEKDAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
-// 2. 密碼驗證與登入邏輯
+// 驗證系統密碼
 function verifyPassword(event) {
   event.preventDefault();
   const pwdInput = document.getElementById("sys-password").value;
@@ -64,7 +54,7 @@ function logoutSystem() {
   document.getElementById("app-content").style.display = "none";
 }
 
-// 3. 監聽 Firebase 資料與連線狀態
+// 初始化 Firebase 資料監聽
 function initFirebaseListener() {
   database.ref(".info/connected").on("value", (snap) => {
     const statusElement = document.getElementById("sync-status");
@@ -80,7 +70,7 @@ function initFirebaseListener() {
   });
 }
 
-// 4. 分頁切換
+// 切換 Tab 頁籤
 function switchTab(tabId) {
   document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
   document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
@@ -91,26 +81,21 @@ function switchTab(tabId) {
   document.getElementById(tabId).classList.add("active");
 }
 
-// 5. 表單提交：新增/續購學員套票 (需輸入處理同事)
+// 儲存/更新學員（包含經手同事必填驗證）
 document.getElementById("student-form").addEventListener("submit", function(e) {
   e.preventDefault();
   
   const name = document.getElementById("name").value.trim();
   const studentId = document.getElementById("student-id").value.trim();
+  const userType = document.getElementById("user-type").value;
   const payment = document.getElementById("payment").value;
   const inputPackage = parseInt(document.getElementById("total-package").value, 10) || 0;
-  
-  // 取得經手同事姓名，若 HTML 未新增對應欄位，則跳出 prompt 輸入
-  let staffNameInput = document.getElementById("staff-name");
-  let staffName = staffNameInput ? staffNameInput.value.trim() : "";
-  
+  let staffName = document.getElementById("staff-name").value.trim();
+
   if (!staffName) {
-    staffName = prompt("請輸入處理同事的姓名：");
-    if (!staffName || !staffName.trim()) {
-      alert("⚠️ 必須輸入處理同事姓名才能進行續期/新增！");
-      return;
-    }
-    staffName = staffName.trim();
+    alert("⚠️ 必須填寫經手同事姓名！請輸入處理同事名字。");
+    document.getElementById("staff-name").focus();
+    return;
   }
 
   if (!name || !studentId) return;
@@ -119,29 +104,28 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
   const timeStamp = new Date().toLocaleString("zh-TW");
 
   if (existingStudent) {
-    // 續購套票
     const updatedTotalPackage = (existingStudent.totalPackage || 0) + inputPackage;
 
     database.ref("students/" + studentId).update({
       name: name,
+      userType: userType,
       payment: payment,
       totalPackage: updatedTotalPackage,
       lastUpdatedBy: staffName,
       lastUpdatedAt: timeStamp
-    })
-    .then(() => {
-      alert(`學員 ${name} (${studentId}) 續購成功！\n經手同事：${staffName}\n新增 ${inputPackage} 堂，總堂數：${updatedTotalPackage} 堂。`);
+    }).then(() => {
+      alert(`學員 ${name} (${studentId}) 續購成功！\n身分：${userType}\n經手同事：${staffName}\n新增 ${inputPackage} 堂，總堂數：${updatedTotalPackage} 堂。`);
       document.getElementById("student-form").reset();
-    })
-    .catch((error) => {
+      document.getElementById("total-package").value = 10;
+    }).catch((error) => {
       alert("更新失敗：" + error.message);
     });
 
   } else {
-    // 新建學員
     const newStudent = {
       name: name,
       studentId: studentId,
+      userType: userType,
       payment: payment,
       totalPackage: inputPackage,
       createdBy: staffName,
@@ -149,37 +133,65 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
       bookings: {}
     };
 
-    database.ref("students/" + studentId).set(newStudent)
-      .then(() => {
-        alert(`學員新增成功！\n經手同事：${staffName}`);
-        document.getElementById("student-form").reset();
-      })
-      .catch((error) => {
-        alert("新增失敗：" + error.message);
-      });
+    database.ref("students/" + studentId).set(newStudent).then(() => {
+      alert(`學員新增成功！\n經手同事：${staffName}`);
+      document.getElementById("student-form").reset();
+      document.getElementById("total-package").value = 10;
+    }).catch((error) => {
+      alert("新增失敗：" + error.message);
+    });
   }
 });
 
-// 6. 渲染學員列表
+// 手動點擊或按 Enter 觸發搜尋
+function executeSearch() {
+  currentSearchKeyword = document.getElementById("search-student").value.trim();
+  renderStudents();
+}
+
+// 模糊搜尋判斷函式
+function isFuzzyMatch(text, query) {
+  if (!text || !query) return false;
+  const cleanText = text.toString().toLowerCase().replace(/\s+/g, '');
+  const cleanQuery = query.toString().toLowerCase().replace(/\s+/g, '');
+  
+  if (cleanText.includes(cleanQuery)) return true;
+  
+  let qIndex = 0;
+  for (let i = 0; i < cleanText.length && qIndex < cleanQuery.length; i++) {
+    if (cleanText[i] === cleanQuery[qIndex]) {
+      qIndex++;
+    }
+  }
+  return qIndex === cleanQuery.length;
+}
+
+// 渲染學員列表
 function renderStudents() {
   const listContainer = document.getElementById("student-list");
-  const keyword = document.getElementById("search-student").value.toLowerCase();
   listContainer.innerHTML = "";
 
-  const keys = Object.keys(studentsData);
-  if (keys.length === 0) {
-    listContainer.innerHTML = "<p style='color: #64748b;'>目前無學員資料。</p>";
+  if (!currentSearchKeyword) {
+    listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>🔍 請在上方搜尋框輸入「學員姓名」或「學員編號」並按下搜尋按鈕以檢視資料。</p>";
     return;
   }
 
+  const keys = Object.keys(studentsData);
+  let matchCount = 0;
+
   keys.forEach(id => {
     const student = studentsData[id];
-    if (student.name.toLowerCase().includes(keyword) || id.toLowerCase().includes(keyword)) {
+    const matchName = isFuzzyMatch(student.name, currentSearchKeyword);
+    const matchId = isFuzzyMatch(id, currentSearchKeyword);
+
+    if (matchName || matchId) {
+      matchCount++;
       const card = document.createElement("div");
       card.className = "student-card";
       
       const isPaid = student.payment === "已付款";
       const badgeClass = isPaid ? "badge paid" : "badge unpaid";
+      const userType = student.userType || "住戶";
 
       const bookedCount = student.bookings ? Object.keys(student.bookings).length : 0;
       const totalPackage = student.totalPackage || 0;
@@ -190,16 +202,11 @@ function renderStudents() {
         const bookingList = Object.keys(student.bookings).map(bKey => ({
           key: bKey,
           ...student.bookings[bKey]
-        })).sort((a, b) => {
-          if (a.date === b.date) {
-            return (a.className || "").localeCompare(b.className || "");
-          }
-          return (a.date || "").localeCompare(b.date || "");
-        });
+        })).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
         bookingsHtml = `<div class="dates-grid">`;
         bookingList.forEach(booking => {
-          const staffTag = booking.updatedBy ? ` (修改人: ${booking.updatedBy})` : (booking.createdBy ? ` (經手: ${booking.createdBy})` : "");
+          const staffTag = booking.updatedBy ? ` (修改: ${booking.updatedBy})` : (booking.createdBy ? ` (經手: ${booking.createdBy})` : "");
           bookingsHtml += `
             <div class="date-chip">
               <span>📅 ${booking.date} | ${booking.className || booking.time}${staffTag}</span>
@@ -219,6 +226,7 @@ function renderStudents() {
         <div class="student-header">
           <div>
             <strong>${student.name}</strong> (${id})
+            <span class="badge type">${userType}</span>
             <span class="${badgeClass}">${student.payment}</span>
           </div>
           <div>
@@ -236,9 +244,13 @@ function renderStudents() {
       listContainer.appendChild(card);
     }
   });
+
+  if (matchCount === 0) {
+    listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>找不到符合關鍵字的學員資料。</p>";
+  }
 }
 
-// 7. 渲染日曆課表總覽
+// 渲染日曆課表總覽
 function renderSchedule() {
   const targetDate = document.getElementById("schedule-date").value;
   const summaryContainer = document.getElementById("schedule-summary");
@@ -252,11 +264,8 @@ function renderSchedule() {
   const weekdayName = WEEKDAY_NAMES[dayOfWeek];
 
   const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
-
   let bookingsByClass = {};
-  availableClasses.forEach(c => {
-    bookingsByClass[c] = [];
-  });
+  availableClasses.forEach(c => bookingsByClass[c] = []);
   bookingsByClass["其他/自訂班別"] = [];
 
   let totalDailyCount = 0;
@@ -289,68 +298,36 @@ function renderSchedule() {
   `;
   summaryContainer.appendChild(headerSummary);
 
-  if (availableClasses.length === 0 && bookingsByClass["其他/自訂班別"].length === 0) {
-    summaryContainer.innerHTML += `<p style="color: #64748b; padding: 10px;">該日期（${weekdayName}）無排定班別。</p>`;
-    return;
-  }
-
   availableClasses.forEach(className => {
     const slotCard = document.createElement("div");
-    slotCard.className = "class-slot-card";
-    slotCard.style.cssText = "background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
+    slotCard.style.cssText = "background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px;";
 
     const students = bookingsByClass[className];
-    let studentsHTML = "";
-
-    if (students.length > 0) {
-      studentsHTML = students.map(s => `<span class="student-tag" style="display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: 500; margin-right: 6px; margin-top: 6px;">👤 ${s.name} (${s.id})</span>`).join("");
-    } else {
-      studentsHTML = `<span style="font-size: 0.85rem; color: #94a3b8; font-style: italic;">尚無學員預約</span>`;
-    }
+    let studentsHTML = students.length > 0
+      ? students.map(s => `<span style="display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; margin-right: 6px; margin-top: 6px;">👤 ${s.name} (${s.id})</span>`).join("")
+      : `<span style="font-size: 0.85rem; color: #94a3b8;">尚無學員預約</span>`;
 
     slotCard.innerHTML = `
-      <div class="class-slot-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 8px;">
         <strong style="color: #0f172a; font-size: 0.95rem;">🎾 ${className}</strong>
         <span style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 12px;">${students.length} 人</span>
       </div>
-      <div class="student-tag-list">${studentsHTML}</div>
+      <div>${studentsHTML}</div>
     `;
     summaryContainer.appendChild(slotCard);
   });
-
-  if (bookingsByClass["其他/自訂班別"].length > 0) {
-    const slotCard = document.createElement("div");
-    slotCard.className = "class-slot-card";
-    slotCard.style.cssText = "background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px;";
-
-    const students = bookingsByClass["其他/自訂班別"];
-    let studentsHTML = students.map(s => `<span class="student-tag" style="display: inline-block; background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; margin-right: 6px; margin-top: 6px;">👤 ${s.name} (${s.originalClass})</span>`).join("");
-
-    slotCard.innerHTML = `
-      <div class="class-slot-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 8px;">
-        <strong style="color: #d97706; font-size: 0.95rem;">📌 其他 / 自訂班別</strong>
-        <span style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 12px;">${students.length} 人</span>
-      </div>
-      <div class="student-tag-list">${studentsHTML}</div>
-    `;
-    summaryContainer.appendChild(slotCard);
-  }
 }
 
-// 8. 刪除學員與預約
+// 刪除學員與預約
 function deleteStudent(id) {
-  if (confirm(`確定要刪除學員 ${id} 嗎？此操作無法撤銷。`)) {
-    database.ref("students/" + id).remove();
-  }
+  if (confirm(`確定要刪除學員 ${id} 嗎？`)) database.ref("students/" + id).remove();
 }
 
 function deleteBooking(studentId, bookingKey) {
-  if (confirm("確定要取消此堂預約嗎？")) {
-    database.ref(`students/${studentId}/bookings/${bookingKey}`).remove();
-  }
+  if (confirm("確定要取消此堂預約嗎？")) database.ref(`students/${studentId}/bookings/${bookingKey}`).remove();
 }
 
-// 9. 開啟「修改單一預約」彈窗 (需輸入經手同事)
+// 修改單堂預約 Modal
 function openEditBookingModal(studentId, bookingKey, currentDate, currentClass) {
   const student = studentsData[studentId];
   if (!student) return;
@@ -363,21 +340,16 @@ function openEditBookingModal(studentId, bookingKey, currentDate, currentClass) 
         <input type="date" id="edit-booking-date" value="${currentDate}" onchange="updateEditClassOptions()" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
         <span id="edit-date-hint" style="font-size: 0.8rem; color: #64748b; margin-top: 2px; display: block;"></span>
       </div>
-
       <div style="margin-bottom: 12px;">
-        <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem;">選擇新班別/時段：</label>
-        <select id="edit-booking-class" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
-          <option value="">請選擇日子</option>
-        </select>
+        <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem;">選擇新班別：</label>
+        <select id="edit-booking-class" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;"></select>
       </div>
-
       <div style="margin-bottom: 12px;">
         <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #dc2626;">修改經手同事姓名 (必填)：</label>
-        <input type="text" id="edit-staff-name" placeholder="請輸入您的名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+        <input type="text" id="edit-staff-name" placeholder="請輸入處理同事名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
       </div>
     </div>
-
-    <button class="btn primary" style="width: 100%; font-size: 1rem; padding: 0.6rem; margin-top: 1rem;" onclick="submitEditBooking('${studentId}', '${bookingKey}')">確認儲存修改</button>
+    <button class="btn primary" style="width: 100%; margin-top: 1rem;" onclick="submitEditBooking('${studentId}', '${bookingKey}')">確認儲存修改</button>
   `;
 
   document.getElementById("booking-modal").style.display = "flex";
@@ -389,71 +361,37 @@ function updateEditClassOptions(presetClass = "") {
   const classSelect = document.getElementById("edit-booking-class");
   const hint = document.getElementById("edit-date-hint");
 
-  if (!dateInput) {
-    classSelect.innerHTML = `<option value="">請選擇日子</option>`;
-    hint.innerText = "";
-    return;
-  }
-
+  if (!dateInput) return;
   const parts = dateInput.split('-');
   const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
   const dayOfWeek = selectedDate.getDay();
   const weekdayName = WEEKDAY_NAMES[dayOfWeek];
 
   hint.innerText = `💡 ${weekdayName}`;
-
   const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
 
   if (availableClasses.length === 0) {
     classSelect.innerHTML = `<option value="">當日無可選擇之班別</option>`;
   } else {
-    classSelect.innerHTML = availableClasses
-      .map(c => `<option value="${weekdayName} ${c}">${c}</option>`)
-      .join("");
-
-    if (presetClass) {
-      for (let opt of classSelect.options) {
-        if (opt.value === presetClass) {
-          classSelect.value = presetClass;
-          break;
-        }
-      }
-    }
+    classSelect.innerHTML = availableClasses.map(c => `<option value="${weekdayName} ${c}">${c}</option>`).join("");
+    if (presetClass) classSelect.value = presetClass;
   }
 }
 
-// 提交修改預約 (含經手同事與重複檢驗)
 function submitEditBooking(studentId, bookingKey) {
   const newDate = document.getElementById("edit-booking-date").value;
   const newClass = document.getElementById("edit-booking-class").value;
   const staffName = document.getElementById("edit-staff-name").value.trim();
 
-  if (!newDate) {
-    alert("請選擇日期！");
-    return;
-  }
-  if (!newClass || newClass === "請選擇日子" || newClass === "當日無可選擇之班別") {
-    alert("請選擇有效的班別與時段！");
-    return;
-  }
   if (!staffName) {
-    alert("⚠️ 請輸入修改經手同事姓名！");
+    alert("⚠️ 必須填寫經手同事姓名！請輸入處理同事名字。");
+    document.getElementById("edit-staff-name").focus();
     return;
   }
 
-  // 重複預約防呆
-  const student = studentsData[studentId];
-  if (student && student.bookings) {
-    const isDuplicate = Object.keys(student.bookings).some(bKey => {
-      if (bKey === bookingKey) return false;
-      const b = student.bookings[bKey];
-      return b.date === newDate && (b.className || b.time) === newClass;
-    });
-
-    if (isDuplicate) {
-      alert(`⚠️ 預約失敗！\n該學員在 ${newDate} 已經預約過「${newClass}」，請勿重複預約。`);
-      return;
-    }
+  if (!newDate || !newClass) {
+    alert("⚠️ 請完整填寫預約日期與班別！");
+    return;
   }
 
   database.ref(`students/${studentId}/bookings/${bookingKey}`).update({
@@ -464,12 +402,10 @@ function submitEditBooking(studentId, bookingKey) {
   }).then(() => {
     alert(`預約修改成功！\n經手同事：${staffName}`);
     closeModal();
-  }).catch(err => {
-    alert("修改失敗：" + err.message);
   });
 }
 
-// 10. 多堂預約彈窗控制
+// 多堂預約 Modal
 function openBookingModal(studentId) {
   const student = studentsData[studentId];
   if (!student) return;
@@ -481,31 +417,27 @@ function openBookingModal(studentId) {
   document.getElementById("modal-title").innerText = `為 ${student.name} 預約課表`;
   document.getElementById("modal-body").innerHTML = `
     <div style="background: #f1f5f9; padding: 10px; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem;">
-      套票總額：<b>${totalPackage}</b> 堂 | 已預約：<b>${bookedCount}</b> 堂 | 
-      <span style="color: ${remainingCount >= 0 ? '#16a34a' : '#dc2626'}; font-weight: bold;">剩餘堂數：${remainingCount} 堂</span>
+      套票總額：<b>${totalPackage}</b> 堂 | 剩餘堂數：<b>${remainingCount}</b> 堂
     </div>
-
     <div class="form-group" style="margin-bottom: 1rem;">
-      <label><b>選擇預約堂數 (1~10 堂)：</b></label>
+      <label><b>選擇預約堂數：</b></label>
       <select id="booking-count" onchange="generateBookingRows('${studentId}')" style="width: 100%; padding: 0.4rem;">
         ${[1,2,3,4,5,6,7,8,9,10].map(num => `<option value="${num}">${num} 堂</option>`).join("")}
       </select>
     </div>
-
-    <div id="booking-rows-container" style="max-height: 220px; overflow-y: auto; padding-right: 5px;"></div>
-
+    <div id="booking-rows-container"></div>
     <div style="margin-top: 10px;">
       <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #dc2626;">經手同事姓名 (必填)：</label>
-      <input type="text" id="booking-staff-name" placeholder="請輸入您的名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+      <input type="text" id="booking-staff-name" placeholder="請輸入處理同事名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
     </div>
-
-    <button class="btn primary" style="width: 100%; font-size: 1rem; padding: 0.6rem; margin-top: 1rem;" onclick="submitMultipleBookings('${studentId}')">確認新增所有預約</button>
+    <button class="btn primary" style="width: 100%; margin-top: 1rem;" onclick="submitMultipleBookings('${studentId}')">確認新增所有預約</button>
   `;
 
   document.getElementById("booking-modal").style.display = "flex";
   generateBookingRows(studentId);
 }
 
+// 生成預約列（包含第一堂變更時自動推算後續每週同一時段之監聽）
 function generateBookingRows(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const container = document.getElementById("booking-rows-container");
@@ -513,135 +445,119 @@ function generateBookingRows(studentId) {
 
   for (let i = 0; i < count; i++) {
     const rowDiv = document.createElement("div");
-    rowDiv.style.cssText = "border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px; background: #fff;";
+    rowDiv.style.cssText = "border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px;";
     rowDiv.innerHTML = `
-      <div style="font-weight: bold; font-size: 0.85rem; color: #2563eb; margin-bottom: 4px;">第 ${i + 1} 堂：</div>
-      <div style="display: flex; gap: 8px; align-items: center;">
-        <input type="date" id="row-date-${i}" value="" onchange="onDateChanged(${i})" style="flex: 1; padding: 0.4rem; font-size: 0.85rem;">
-        <select id="row-class-${i}" onchange="onClassChanged(${i})" style="flex: 1.5; padding: 0.4rem; font-size: 0.85rem;">
-          <option value="">請選擇日子</option>
+      <div style="font-weight: bold; font-size: 0.85rem; color: #2563eb;">第 ${i + 1} 堂：</div>
+      <div style="display: flex; gap: 8px;">
+        <input type="date" id="row-date-${i}" onchange="handleRowDateChange(${i})" style="flex: 1; padding: 0.4rem;">
+        <select id="row-class-${i}" onchange="handleRowClassChange(${i})" style="flex: 1.5; padding: 0.4rem;">
+          <option value="">請先選擇日期</option>
         </select>
       </div>
-      <span id="row-hint-${i}" style="font-size: 0.75rem; color: #64748b;"></span>
     `;
     container.appendChild(rowDiv);
   }
 }
 
-function onDateChanged(index) {
+// 處理日期變更（選第 1 堂會自動推算後續每週同一天）
+function handleRowDateChange(index) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
-  const selectedDateStr = document.getElementById(`row-date-${index}`).value;
+  const firstDateVal = document.getElementById("row-date-0").value;
 
-  updateRowClassOptions(index);
+  if (index === 0 && firstDateVal) {
+    const startDate = new Date(firstDateVal);
 
-  if (index === 0 && selectedDateStr) {
-    const parts = selectedDateStr.split('-');
-    const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    for (let i = 0; i < count; i++) {
+      const nextDate = new Date(startDate);
+      nextDate.setDate(startDate.getDate() + (i * 7)); // 每週順延 7 天
 
-    for (let i = 1; i < count; i++) {
-      const nextDate = new Date(baseDate);
-      nextDate.setDate(baseDate.getDate() + (i * 7));
-
-      const yyyy = nextDate.getFullYear();
-      const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
-      const dd = String(nextDate.getDate()).padStart(2, '0');
-      const nextDateStr = `${yyyy}-${mm}-${dd}`;
+      // 格式化為 YYYY-MM-DD
+      const year = nextDate.getFullYear();
+      const month = String(nextDate.getMonth() + 1).padStart(2, '0');
+      const day = String(nextDate.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
 
       const dateInput = document.getElementById(`row-date-${i}`);
       if (dateInput) {
-        dateInput.value = nextDateStr;
+        dateInput.value = formattedDate;
         updateRowClassOptions(i);
       }
+    }
+    
+    // 若第 1 堂已選擇班別，同步自動帶入後續選單
+    handleRowClassChange(0);
+  } else {
+    updateRowClassOptions(index);
+  }
+}
+
+// 更新單列班別選單選項
+function updateRowClassOptions(index) {
+  const dateInput = document.getElementById(`row-date-${index}`).value;
+  const classSelect = document.getElementById(`row-class-${index}`);
+
+  if (!dateInput) return;
+  const parts = dateInput.split('-');
+  const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  const dayOfWeek = selectedDate.getDay();
+  const weekdayName = WEEKDAY_NAMES[dayOfWeek];
+  const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
+
+  const currentSelected = classSelect.value;
+
+  if (availableClasses.length === 0) {
+    classSelect.innerHTML = `<option value="">當日無課</option>`;
+  } else {
+    classSelect.innerHTML = availableClasses.map(c => `<option value="${weekdayName} ${c}">${c}</option>`).join("");
+    if (currentSelected) {
+      classSelect.value = currentSelected;
     }
   }
 }
 
-function onClassChanged(index) {
-  if (index !== 0) return;
-  const count = parseInt(document.getElementById("booking-count").value, 10);
-  const selectedClass = document.getElementById("row-class-0").value;
+// 處理班別選擇變更（選第 1 堂會自動套用該時段至後續所有堂數）
+function handleRowClassChange(index) {
+  if (index === 0) {
+    const firstClassVal = document.getElementById("row-class-0").value;
+    const count = parseInt(document.getElementById("booking-count").value, 10);
 
-  if (!selectedClass) return;
+    if (!firstClassVal) return;
 
-  for (let i = 1; i < count; i++) {
-    const selectElem = document.getElementById(`row-class-${i}`);
-    if (selectElem) {
-      for (let option of selectElem.options) {
-        if (option.value === selectedClass) {
-          selectElem.value = selectedClass;
-          break;
+    // 取出不含星期字頭的班別名稱
+    const pureClassName = firstClassVal.replace(/^(星期[一二三四五六日]\s*)/, "").trim();
+
+    for (let i = 1; i < count; i++) {
+      const selectElem = document.getElementById(`row-class-${i}`);
+      if (selectElem) {
+        for (let option of selectElem.options) {
+          if (option.value.includes(pureClassName)) {
+            selectElem.value = option.value;
+            break;
+          }
         }
       }
     }
   }
 }
 
-function updateRowClassOptions(index) {
-  const dateInput = document.getElementById(`row-date-${index}`).value;
-  const classSelect = document.getElementById(`row-class-${index}`);
-  const hint = document.getElementById(`row-hint-${index}`);
-
-  if (!dateInput) {
-    classSelect.innerHTML = `<option value="">請選擇日子</option>`;
-    hint.innerText = "";
-    return;
-  }
-
-  const parts = dateInput.split('-');
-  const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
-  const dayOfWeek = selectedDate.getDay();
-  const weekdayName = WEEKDAY_NAMES[dayOfWeek];
-
-  hint.innerText = `💡 ${weekdayName}`;
-
-  const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
-
-  if (availableClasses.length === 0) {
-    classSelect.innerHTML = `<option value="">當日無可選擇之班別</option>`;
-  } else {
-    const currentVal = classSelect.value;
-    classSelect.innerHTML = availableClasses
-      .map(c => `<option value="${weekdayName} ${c}">${c}</option>`)
-      .join("");
-
-    const firstClassVal = document.getElementById("row-class-0") ? document.getElementById("row-class-0").value : "";
-    const targetVal = (index > 0 && firstClassVal) ? firstClassVal : currentVal;
-
-    let matched = false;
-    for (let opt of classSelect.options) {
-      if (opt.value === targetVal) {
-        classSelect.value = targetVal;
-        matched = true;
-        break;
-      }
-    }
-    if (!matched && classSelect.options.length > 0) {
-      classSelect.selectedIndex = 0;
-    }
-  }
-}
-
+// 提交批次預約
 function submitMultipleBookings(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const staffName = document.getElementById("booking-staff-name").value.trim();
-  const student = studentsData[studentId];
-  let newBookings = [];
 
   if (!staffName) {
-    alert("⚠️ 請輸入經手同事姓名！");
+    alert("⚠️ 必須填寫經手同事姓名！請輸入處理同事名字。");
+    document.getElementById("booking-staff-name").focus();
     return;
   }
 
+  let newBookings = [];
   for (let i = 0; i < count; i++) {
     const date = document.getElementById(`row-date-${i}`).value;
     const selectedClass = document.getElementById(`row-class-${i}`).value;
 
-    if (!date) {
-      alert(`第 ${i + 1} 堂尚未選擇日期！`);
-      return;
-    }
-    if (!selectedClass || selectedClass === "請選擇日子" || selectedClass === "當日無可選擇之班別") {
-      alert(`第 ${i + 1} 堂尚未選擇班別！`);
+    if (!date || !selectedClass) {
+      alert(`請完整填寫第 ${i + 1} 堂的預約內容！`);
       return;
     }
 
@@ -653,37 +569,11 @@ function submitMultipleBookings(studentId) {
     });
   }
 
-  // 檢查選單內部重複
-  for (let i = 0; i < newBookings.length; i++) {
-    for (let j = i + 1; j < newBookings.length; j++) {
-      if (newBookings[i].date === newBookings[j].date && newBookings[i].className === newBookings[j].className) {
-        alert(`⚠️ 預約失敗！\n您在輸入清單中選擇了兩次相同的時間：\n${newBookings[i].date} - ${newBookings[i].className}`);
-        return;
-      }
-    }
-  }
-
-  // 檢查資料庫既有重複
-  if (student && student.bookings) {
-    const existingBookings = Object.values(student.bookings);
-    for (let newB of newBookings) {
-      const isDuplicate = existingBookings.some(eB => eB.date === newB.date && (eB.className || eB.time) === newB.className);
-      if (isDuplicate) {
-        alert(`⚠️ 預約失敗！\n學員在 ${newB.date} 已經預約過「${newB.className}」，不可重複預約。`);
-        return;
-      }
-    }
-  }
-
-  let promises = newBookings.map(b => {
-    return database.ref(`students/${studentId}/bookings`).push().set(b);
-  });
+  let promises = newBookings.map(b => database.ref(`students/${studentId}/bookings`).push().set(b));
 
   Promise.all(promises).then(() => {
     alert(`成功預約 ${count} 堂課程！\n經手同事：${staffName}`);
     closeModal();
-  }).catch(err => {
-    alert("預約失敗：" + err.message);
   });
 }
 
@@ -691,10 +581,10 @@ function closeModal() {
   document.getElementById("booking-modal").style.display = "none";
 }
 
-// 11. 匯出 Excel 報表功能
+// 匯出至 Excel
 function exportToExcel() {
   if (typeof XLSX === 'undefined') {
-    alert("Excel 模組載入中，請稍後幾秒再試...");
+    alert("Excel 模組載入中，請稍後再試...");
     return;
   }
 
@@ -711,14 +601,15 @@ function exportToExcel() {
       excelRows.push({
         "學員編號": id,
         "學員姓名": student.name,
+        "身分類別": student.userType || "住戶",
         "付款狀態": student.payment || "",
         "總套票堂數": totalPackage,
         "已預約堂數": bookedCount,
         "剩餘堂數": remainingCount,
         "預約日期": "無預約",
         "預約班別": "-",
-        "最後經手/新增同事": student.lastUpdatedBy || student.createdBy || "-",
-        "預約/修改經手同事": "-"
+        "新增/續期同事": student.lastUpdatedBy || student.createdBy || "-",
+        "預約/修改同事": "-"
       });
     } else {
       Object.keys(bookings).forEach(bKey => {
@@ -726,14 +617,15 @@ function exportToExcel() {
         excelRows.push({
           "學員編號": id,
           "學員姓名": student.name,
+          "身分類別": student.userType || "住戶",
           "付款狀態": student.payment || "",
           "總套票堂數": totalPackage,
           "已預約堂數": bookedCount,
           "剩餘堂數": remainingCount,
           "預約日期": b.date || "",
           "預約班別": b.className || b.time || "",
-          "最後經手/續期同事": student.lastUpdatedBy || student.createdBy || "-",
-          "預約/修改經手同事": b.updatedBy || b.createdBy || "-"
+          "新增/續期同事": student.lastUpdatedBy || student.createdBy || "-",
+          "預約/修改同事": b.updatedBy || b.createdBy || "-"
         });
       });
     }
@@ -741,9 +633,8 @@ function exportToExcel() {
 
   const worksheet = XLSX.utils.json_to_sheet(excelRows);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "學員課表與套票紀錄");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "學員課表總表");
 
-  // 自動導出檔案
   const today = new Date().toISOString().split('T')[0];
-  XLSX.writeFile(workbook, `網球課表預約總表_${today}.xlsx`);
+  XLSX.writeFile(workbook, `網球課表紀錄_${today}.xlsx`);
 }
