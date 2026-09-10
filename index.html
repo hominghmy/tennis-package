@@ -47,7 +47,7 @@
 
     /* 表單與卡片 */
     .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
     .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
     .form-group label { font-size: 0.85rem; font-weight: 600; color: #475569; }
     .form-group input, .form-group select { padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; }
@@ -62,9 +62,10 @@
     /* 學員卡片 */
     .student-card { background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 0.8rem; }
     .student-header { display: flex; justify-content: space-between; align-items: center; }
-    .badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 4px; }
     .badge.paid { background: #dcfce7; color: #15803d; }
     .badge.unpaid { background: #fee2e2; color: #b91c1c; }
+    .badge.type { background: #e0f2fe; color: #0369a1; }
     .dates-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
     .date-chip { background: #f1f5f9; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.8rem; display: flex; align-items: center; }
 
@@ -95,7 +96,6 @@
         <span id="sync-status" style="font-size: 0.85rem; color: #64748b;">🟡 連線中...</span>
       </div>
       <div style="display: flex; gap: 8px;">
-        <!-- 新增：匯出 Excel 按鈕 -->
         <button class="btn success" onclick="exportToExcel()">📊 匯出 Excel 紀錄</button>
         <button class="btn danger" onclick="logoutSystem()">登出</button>
       </div>
@@ -112,8 +112,15 @@
           </div>
           <div class="form-group">
             <label>學員編號：</label>
-            <!-- 更改：預設範例為 SPC0001 -->
             <input type="text" id="student-id" required placeholder="例：SPC0001">
+          </div>
+          <!-- 新增：住戶 / 訪客 選單 -->
+          <div class="form-group">
+            <label>身分類別：</label>
+            <select id="user-type">
+              <option value="住戶">住戶</option>
+              <option value="訪客">訪客</option>
+            </select>
           </div>
           <div class="form-group">
             <label>付款狀態：</label>
@@ -128,7 +135,8 @@
           </div>
           <div class="form-group">
             <label style="color: #dc2626;">經手同事姓名：</label>
-            <input type="text" id="staff-name" required placeholder="請輸入處理 colleagues 名字">
+            <!-- 更改提示字眼：請輸入處理同事名字 -->
+            <input type="text" id="staff-name" required placeholder="請輸入處理同事名字">
           </div>
         </div>
         <button type="submit" class="btn primary">儲存 / 更新學員</button>
@@ -141,10 +149,10 @@
       <button class="tab-btn" onclick="switchTab('tab-schedule')">📅 日曆課表總覽</button>
     </div>
 
-    <!-- 分頁 1：學員列表 -->
+    <!-- 分頁 1：學員列表 (預設隱藏，需搜尋才顯示) -->
     <div id="tab-students" class="tab-content active">
       <div style="margin-bottom: 1rem;">
-        <input type="text" id="search-student" placeholder="🔍 搜尋學員姓名或編號..." oninput="renderStudents()" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px;">
+        <input type="text" id="search-student" placeholder="🔍 請輸入學員姓名或編號進行搜尋..." oninput="renderStudents()" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem;">
       </div>
       <div id="student-list"></div>
     </div>
@@ -255,18 +263,19 @@
       document.getElementById(tabId).classList.add("active");
     }
 
-    // 提交表單：新增/續購學員
+    // 提交表單：新增/續購學員 (含住戶/訪客與經手同事)
     document.getElementById("student-form").addEventListener("submit", function(e) {
       e.preventDefault();
       
       const name = document.getElementById("name").value.trim();
       const studentId = document.getElementById("student-id").value.trim();
+      const userType = document.getElementById("user-type").value;
       const payment = document.getElementById("payment").value;
       const inputPackage = parseInt(document.getElementById("total-package").value, 10) || 0;
       let staffName = document.getElementById("staff-name").value.trim();
 
       if (!staffName) {
-        alert("⚠️ 請輸入處理同事姓名！");
+        alert("⚠️ 請輸入處理同事名字！");
         return;
       }
 
@@ -280,12 +289,13 @@
 
         database.ref("students/" + studentId).update({
           name: name,
+          userType: userType,
           payment: payment,
           totalPackage: updatedTotalPackage,
           lastUpdatedBy: staffName,
           lastUpdatedAt: timeStamp
         }).then(() => {
-          alert(`學員 ${name} (${studentId}) 續購成功！\n經手同事：${staffName}\n新增 ${inputPackage} 堂，總堂數：${updatedTotalPackage} 堂。`);
+          alert(`學員 ${name} (${studentId}) 續購成功！\n身分：${userType}\n經手同事：${staffName}\n新增 ${inputPackage} 堂，總堂數：${updatedTotalPackage} 堂。`);
           document.getElementById("student-form").reset();
         }).catch((error) => {
           alert("更新失敗：" + error.message);
@@ -295,6 +305,7 @@
         const newStudent = {
           name: name,
           studentId: studentId,
+          userType: userType,
           payment: payment,
           totalPackage: inputPackage,
           createdBy: staffName,
@@ -311,26 +322,31 @@
       }
     });
 
-    // 渲染學員列表
+    // 渲染學員列表 (搜尋時才顯示，未搜尋預設隱藏)
     function renderStudents() {
       const listContainer = document.getElementById("student-list");
-      const keyword = document.getElementById("search-student").value.toLowerCase();
+      const keyword = document.getElementById("search-student").value.trim().toLowerCase();
       listContainer.innerHTML = "";
 
-      const keys = Object.keys(studentsData);
-      if (keys.length === 0) {
-        listContainer.innerHTML = "<p style='color: #64748b;'>目前無學員資料。</p>";
+      // 未輸入搜尋關鍵字時，顯示提示文字並隱藏資料
+      if (!keyword) {
+        listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>🔍 請在上方搜尋框輸入「學員姓名」或「學員編號」以檢視資料。</p>";
         return;
       }
+
+      const keys = Object.keys(studentsData);
+      let matchCount = 0;
 
       keys.forEach(id => {
         const student = studentsData[id];
         if (student.name.toLowerCase().includes(keyword) || id.toLowerCase().includes(keyword)) {
+          matchCount++;
           const card = document.createElement("div");
           card.className = "student-card";
           
           const isPaid = student.payment === "已付款";
           const badgeClass = isPaid ? "badge paid" : "badge unpaid";
+          const userType = student.userType || "住戶";
 
           const bookedCount = student.bookings ? Object.keys(student.bookings).length : 0;
           const totalPackage = student.totalPackage || 0;
@@ -365,6 +381,7 @@
             <div class="student-header">
               <div>
                 <strong>${student.name}</strong> (${id})
+                <span class="badge type">${userType}</span>
                 <span class="${badgeClass}">${student.payment}</span>
               </div>
               <div>
@@ -382,6 +399,10 @@
           listContainer.appendChild(card);
         }
       });
+
+      if (matchCount === 0) {
+        listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>找不到符合關鍵字的學員資料。</p>";
+      }
     }
 
     // 渲染課表
@@ -480,7 +501,7 @@
           </div>
           <div style="margin-bottom: 12px;">
             <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #dc2626;">修改經手同事姓名 (必填)：</label>
-            <input type="text" id="edit-staff-name" placeholder="請輸入您的名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+            <input type="text" id="edit-staff-name" placeholder="請輸入處理同事名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
           </div>
         </div>
         <button class="btn primary" style="width: 100%; margin-top: 1rem;" onclick="submitEditBooking('${studentId}', '${bookingKey}')">確認儲存修改</button>
@@ -556,7 +577,7 @@
         <div id="booking-rows-container"></div>
         <div style="margin-top: 10px;">
           <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #dc2626;">經手同事姓名 (必填)：</label>
-          <input type="text" id="booking-staff-name" placeholder="請輸入您的名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+          <input type="text" id="booking-staff-name" placeholder="請輸入處理同事名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
         </div>
         <button class="btn primary" style="width: 100%; margin-top: 1rem;" onclick="submitMultipleBookings('${studentId}')">確認新增所有預約</button>
       `;
@@ -606,7 +627,7 @@
       let newBookings = [];
 
       if (!staffName) {
-        alert("⚠️ 請輸入經手同事姓名！");
+        alert("⚠️ 請輸入處理同事名字！");
         return;
       }
 
@@ -639,7 +660,7 @@
       document.getElementById("booking-modal").style.display = "none";
     }
 
-    // 匯出 Excel 核心函數
+    // 匯出 Excel 核心函數 (含身分類別欄位)
     function exportToExcel() {
       if (typeof XLSX === 'undefined') {
         alert("Excel 模組載入中，請稍後再試...");
@@ -659,6 +680,7 @@
           excelRows.push({
             "學員編號": id,
             "學員姓名": student.name,
+            "身分類別": student.userType || "住戶",
             "付款狀態": student.payment || "",
             "總套票堂數": totalPackage,
             "已預約堂數": bookedCount,
@@ -674,6 +696,7 @@
             excelRows.push({
               "學員編號": id,
               "學員姓名": student.name,
+              "身分類別": student.userType || "住戶",
               "付款狀態": student.payment || "",
               "總套票堂數": totalPackage,
               "已預約堂數": bookedCount,
