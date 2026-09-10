@@ -81,7 +81,7 @@ function switchTab(tabId) {
   document.getElementById(tabId).classList.add("active");
 }
 
-// 儲存/更新學員（包含經手同事必填驗證）
+// 儲存/更新學員
 document.getElementById("student-form").addEventListener("submit", function(e) {
   e.preventDefault();
   
@@ -378,6 +378,7 @@ function updateEditClassOptions(presetClass = "") {
   }
 }
 
+// 修改預約（含重複檢測防呆）
 function submitEditBooking(studentId, bookingKey) {
   const newDate = document.getElementById("edit-booking-date").value;
   const newClass = document.getElementById("edit-booking-class").value;
@@ -392,6 +393,21 @@ function submitEditBooking(studentId, bookingKey) {
   if (!newDate || !newClass) {
     alert("⚠️ 請完整填寫預約日期與班別！");
     return;
+  }
+
+  // 防呆判斷：檢測該學員是否已有相同日期 + 班別的預約 (排除自己正在修改的這個 bookingKey)
+  const student = studentsData[studentId];
+  if (student && student.bookings) {
+    const isDuplicate = Object.keys(student.bookings).some(key => {
+      if (key === bookingKey) return false; // 排除自己
+      const b = student.bookings[key];
+      return b.date === newDate && (b.className === newClass || b.time === newClass);
+    });
+
+    if (isDuplicate) {
+      alert(`⚠️ 預約失敗！該學員在 ${newDate} 已預約過【${newClass}】，無法重複預約同一天同一時段。`);
+      return;
+    }
   }
 
   database.ref(`students/${studentId}/bookings/${bookingKey}`).update({
@@ -437,7 +453,7 @@ function openBookingModal(studentId) {
   generateBookingRows(studentId);
 }
 
-// 生成預約列（同時掛載 onchange 與 oninput 事件雙重保護）
+// 生成預約列
 function generateBookingRows(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const container = document.getElementById("booking-rows-container");
@@ -459,7 +475,7 @@ function generateBookingRows(studentId) {
   }
 }
 
-// 處理日期變更（選第 1 堂會自動推算後續每週同一天）
+// 處理日期變更
 function handleRowDateChange(index) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const firstDateVal = document.getElementById("row-date-0").value;
@@ -473,7 +489,6 @@ function handleRowDateChange(index) {
     const startDateNum = parseInt(parts[2], 10);
 
     for (let i = 0; i < count; i++) {
-      // 安全精準加算天數
       const nextDateObj = new Date(startYear, startMonth, startDateNum + (i * 7));
 
       const year = nextDateObj.getFullYear();
@@ -488,7 +503,6 @@ function handleRowDateChange(index) {
       }
     }
     
-    // 同步把第 1 堂已選的班別帶入後續
     handleRowClassChange(0);
   } else {
     updateRowClassOptions(index);
@@ -521,7 +535,7 @@ function updateRowClassOptions(index) {
   }
 }
 
-// 處理班別選擇變更（選第 1 堂會自動套用該時段至後續所有堂數）
+// 處理班別選擇變更
 function handleRowClassChange(index) {
   if (index === 0) {
     const firstClassVal = document.getElementById("row-class-0").value;
@@ -529,7 +543,6 @@ function handleRowClassChange(index) {
 
     if (!firstClassVal) return;
 
-    // 清理字頭，抓出極簡班別名稱（例如 "Yellow Ball 1730-1930"）
     const pureClassName = firstClassVal.replace(/^(星期[一二三四五六日]\s*)/, "").trim();
 
     for (let i = 1; i < count; i++) {
@@ -546,7 +559,7 @@ function handleRowClassChange(index) {
   }
 }
 
-// 提交批次預約
+// 提交批次預約（包含內外部重複防呆）
 function submitMultipleBookings(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const staffName = document.getElementById("booking-staff-name").value.trim();
@@ -558,6 +571,8 @@ function submitMultipleBookings(studentId) {
   }
 
   let newBookings = [];
+  let seenSlots = new Set(); // 檢測目前畫面上填寫的是否自我重複
+
   for (let i = 0; i < count; i++) {
     const date = document.getElementById(`row-date-${i}`).value;
     const selectedClass = document.getElementById(`row-class-${i}`).value;
@@ -567,12 +582,32 @@ function submitMultipleBookings(studentId) {
       return;
     }
 
+    const slotKey = `${date}_${selectedClass}`;
+    if (seenSlots.has(slotKey)) {
+      alert(`⚠️ 預約表單內包含重複預約：\n第 ${i + 1} 堂與前面設定了相同的日期與時段（${date} ${selectedClass}）。請調整後再試！`);
+      return;
+    }
+    seenSlots.add(slotKey);
+
     newBookings.push({ 
       date: date, 
       className: selectedClass,
       createdBy: staffName,
       createdAt: new Date().toLocaleString("zh-TW")
     });
+  }
+
+  // 防呆：檢測是否與該學員「資料庫中已有」的預約重複
+  const student = studentsData[studentId];
+  if (student && student.bookings) {
+    const existingBookings = Object.values(student.bookings);
+    for (let nb of newBookings) {
+      const isAlreadyBooked = existingBookings.some(eb => eb.date === nb.date && (eb.className === nb.className || eb.time === nb.className));
+      if (isAlreadyBooked) {
+        alert(`⚠️ 預約失敗！該學員已在 ${nb.date} 預約過【${nb.className}】，請勿重複預約。`);
+        return;
+      }
+    }
   }
 
   let promises = newBookings.map(b => database.ref(`students/${studentId}/bookings`).push().set(b));
@@ -644,4 +679,3 @@ function exportToExcel() {
   const today = new Date().toISOString().split('T')[0];
   XLSX.writeFile(workbook, `網球課表紀錄_${today}.xlsx`);
 }
-
