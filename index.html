@@ -114,7 +114,7 @@
             <label>學員編號：</label>
             <input type="text" id="student-id" required placeholder="例：SPC0001">
           </div>
-          <!-- 新增：住戶 / 訪客 選單 -->
+          <!-- 修改 1：新增 住戶 / 訪客 下拉選單 -->
           <div class="form-group">
             <label>身分類別：</label>
             <select id="user-type">
@@ -135,7 +135,7 @@
           </div>
           <div class="form-group">
             <label style="color: #dc2626;">經手同事姓名：</label>
-            <!-- 更改提示字眼：請輸入處理同事名字 -->
+            <!-- 修改 2：修正 Prompt 為全中文 -->
             <input type="text" id="staff-name" required placeholder="請輸入處理同事名字">
           </div>
         </div>
@@ -149,7 +149,7 @@
       <button class="tab-btn" onclick="switchTab('tab-schedule')">📅 日曆課表總覽</button>
     </div>
 
-    <!-- 分頁 1：學員列表 (預設隱藏，需搜尋才顯示) -->
+    <!-- 分頁 1：學員列表 (修改 3：未搜尋時完全隱藏) -->
     <div id="tab-students" class="tab-content active">
       <div style="margin-bottom: 1rem;">
         <input type="text" id="search-student" placeholder="🔍 請輸入學員姓名或編號進行搜尋..." oninput="renderStudents()" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem;">
@@ -182,7 +182,7 @@
 
   <!-- JavaScript 邏輯程式碼 -->
   <script>
-    // 1. Firebase 初始化設定 (請填入你的 Firebase 專案設定)
+    // Firebase 初始化設定
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "tennis-package.firebaseapp.com",
@@ -263,7 +263,7 @@
       document.getElementById(tabId).classList.add("active");
     }
 
-    // 提交表單：新增/續購學員 (含住戶/訪客與經手同事)
+    // 儲存 / 更新學員
     document.getElementById("student-form").addEventListener("submit", function(e) {
       e.preventDefault();
       
@@ -322,13 +322,12 @@
       }
     });
 
-    // 渲染學員列表 (搜尋時才顯示，未搜尋預設隱藏)
+    // 渲染學員列表 (嚴格限制：空搜尋欄位時絕不渲染列表)
     function renderStudents() {
       const listContainer = document.getElementById("student-list");
       const keyword = document.getElementById("search-student").value.trim().toLowerCase();
       listContainer.innerHTML = "";
 
-      // 未輸入搜尋關鍵字時，顯示提示文字並隱藏資料
       if (!keyword) {
         listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>🔍 請在上方搜尋框輸入「學員姓名」或「學員編號」以檢視資料。</p>";
         return;
@@ -405,7 +404,7 @@
       }
     }
 
-    // 渲染課表
+    // 渲染日曆課表總覽
     function renderSchedule() {
       const targetDate = document.getElementById("schedule-date").value;
       const summaryContainer = document.getElementById("schedule-summary");
@@ -473,7 +472,7 @@
       });
     }
 
-    // 刪除操作
+    // 刪除處理
     function deleteStudent(id) {
       if (confirm(`確定要刪除學員 ${id} 嗎？`)) database.ref("students/" + id).remove();
     }
@@ -554,7 +553,7 @@
       });
     }
 
-    // 多堂預約彈窗
+    // 預約彈窗
     function openBookingModal(studentId) {
       const student = studentsData[studentId];
       if (!student) return;
@@ -660,7 +659,7 @@
       document.getElementById("booking-modal").style.display = "none";
     }
 
-    // 匯出 Excel 核心函數 (含身分類別欄位)
+    // 匯出 Excel
     function exportToExcel() {
       if (typeof XLSX === 'undefined') {
         alert("Excel 模組載入中，請稍後再試...");
