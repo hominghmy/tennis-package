@@ -114,7 +114,6 @@
             <label>學員編號：</label>
             <input type="text" id="student-id" required placeholder="例：SPC0001">
           </div>
-          <!-- 修改 1：新增 住戶 / 訪客 下拉選單 -->
           <div class="form-group">
             <label>身分類別：</label>
             <select id="user-type">
@@ -131,11 +130,11 @@
           </div>
           <div class="form-group">
             <label>套票堂數：</label>
-            <input type="number" id="total-package" min="1" value="4" required>
+            <!-- 預設數字設定為 10 -->
+            <input type="number" id="total-package" min="1" value="10" required>
           </div>
           <div class="form-group">
-            <label style="color: #dc2626;">經手同事姓名：</label>
-            <!-- 修改 2：修正 Prompt 為全中文 -->
+            <label style="color: #dc2626;">經手同事姓名 (必填)：</label>
             <input type="text" id="staff-name" required placeholder="請輸入處理同事名字">
           </div>
         </div>
@@ -149,10 +148,11 @@
       <button class="tab-btn" onclick="switchTab('tab-schedule')">📅 日曆課表總覽</button>
     </div>
 
-    <!-- 分頁 1：學員列表 (修改 3：未搜尋時完全隱藏) -->
+    <!-- 分頁 1：學員列表 (含搜尋按鈕，點擊後觸發模糊搜尋) -->
     <div id="tab-students" class="tab-content active">
-      <div style="margin-bottom: 1rem;">
-        <input type="text" id="search-student" placeholder="🔍 請輸入學員姓名或編號進行搜尋..." oninput="renderStudents()" style="width: 100%; padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem;">
+      <div style="display: flex; gap: 8px; margin-bottom: 1rem;">
+        <input type="text" id="search-student" placeholder="🔍 請輸入學員姓名或編號進行搜尋..." style="flex: 1; padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem;" onkeydown="if(event.key==='Enter') executeSearch()">
+        <button class="btn primary" onclick="executeSearch()">🔍 搜尋</button>
       </div>
       <div id="student-list"></div>
     </div>
@@ -182,7 +182,6 @@
 
   <!-- JavaScript 邏輯程式碼 -->
   <script>
-    // Firebase 初始化設定
     const firebaseConfig = {
       apiKey: "YOUR_API_KEY",
       authDomain: "tennis-package.firebaseapp.com",
@@ -199,6 +198,7 @@
     const database = firebase.database();
 
     let studentsData = {};
+    let currentSearchKeyword = ""; // 儲存當前搜尋關鍵字
 
     const SCHEDULE_BY_DAY = {
       1: ["Red Ball 1530-1630", "Orange Ball 1630-1730", "Green Ball 1730-1900"],
@@ -212,7 +212,6 @@
 
     const WEEKDAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
-    // 密碼驗證
     function verifyPassword(event) {
       event.preventDefault();
       const pwdInput = document.getElementById("sys-password").value;
@@ -236,7 +235,6 @@
       document.getElementById("app-content").style.display = "none";
     }
 
-    // 監聽 Firebase
     function initFirebaseListener() {
       database.ref(".info/connected").on("value", (snap) => {
         const statusElement = document.getElementById("sync-status");
@@ -252,7 +250,6 @@
       });
     }
 
-    // 切換頁籤
     function switchTab(tabId) {
       document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
       document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
@@ -263,7 +260,7 @@
       document.getElementById(tabId).classList.add("active");
     }
 
-    // 儲存 / 更新學員
+    // 儲存/更新學員（包含經手同事必填驗證）
     document.getElementById("student-form").addEventListener("submit", function(e) {
       e.preventDefault();
       
@@ -275,7 +272,8 @@
       let staffName = document.getElementById("staff-name").value.trim();
 
       if (!staffName) {
-        alert("⚠️ 請輸入處理同事名字！");
+        alert("⚠️ 必須填寫經手同事姓名！請輸入處理同事名字。");
+        document.getElementById("staff-name").focus();
         return;
       }
 
@@ -297,6 +295,7 @@
         }).then(() => {
           alert(`學員 ${name} (${studentId}) 續購成功！\n身分：${userType}\n經手同事：${staffName}\n新增 ${inputPackage} 堂，總堂數：${updatedTotalPackage} 堂。`);
           document.getElementById("student-form").reset();
+          document.getElementById("total-package").value = 10;
         }).catch((error) => {
           alert("更新失敗：" + error.message);
         });
@@ -316,20 +315,44 @@
         database.ref("students/" + studentId).set(newStudent).then(() => {
           alert(`學員新增成功！\n經手同事：${staffName}`);
           document.getElementById("student-form").reset();
+          document.getElementById("total-package").value = 10;
         }).catch((error) => {
           alert("新增失敗：" + error.message);
         });
       }
     });
 
-    // 渲染學員列表 (嚴格限制：空搜尋欄位時絕不渲染列表)
+    // 手動點擊或按 Enter 觸發搜尋
+    function executeSearch() {
+      currentSearchKeyword = document.getElementById("search-student").value.trim();
+      renderStudents();
+    }
+
+    // 模糊搜尋判斷函式
+    function isFuzzyMatch(text, query) {
+      if (!text || !query) return false;
+      const cleanText = text.toString().toLowerCase().replace(/\s+/g, '');
+      const cleanQuery = query.toString().toLowerCase().replace(/\s+/g, '');
+      
+      // 直接包含或者字元順序符合
+      if (cleanText.includes(cleanQuery)) return true;
+      
+      let qIndex = 0;
+      for (let i = 0; i < cleanText.length && qIndex < cleanQuery.length; i++) {
+        if (cleanText[i] === cleanQuery[qIndex]) {
+          qIndex++;
+        }
+      }
+      return qIndex === cleanQuery.length;
+    }
+
+    // 渲染學員列表 (必須按下搜尋才會顯示符合條件的學員)
     function renderStudents() {
       const listContainer = document.getElementById("student-list");
-      const keyword = document.getElementById("search-student").value.trim().toLowerCase();
       listContainer.innerHTML = "";
 
-      if (!keyword) {
-        listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>🔍 請在上方搜尋框輸入「學員姓名」或「學員編號」以檢視資料。</p>";
+      if (!currentSearchKeyword) {
+        listContainer.innerHTML = "<p style='color: #64748b; text-align: center; padding: 2rem 0;'>🔍 請在上方搜尋框輸入「學員姓名」或「學員編號」並按下搜尋按鈕以檢視資料。</p>";
         return;
       }
 
@@ -338,7 +361,10 @@
 
       keys.forEach(id => {
         const student = studentsData[id];
-        if (student.name.toLowerCase().includes(keyword) || id.toLowerCase().includes(keyword)) {
+        const matchName = isFuzzyMatch(student.name, currentSearchKeyword);
+        const matchId = isFuzzyMatch(id, currentSearchKeyword);
+
+        if (matchName || matchId) {
           matchCount++;
           const card = document.createElement("div");
           card.className = "student-card";
@@ -404,7 +430,6 @@
       }
     }
 
-    // 渲染日曆課表總覽
     function renderSchedule() {
       const targetDate = document.getElementById("schedule-date").value;
       const summaryContainer = document.getElementById("schedule-summary");
@@ -472,7 +497,6 @@
       });
     }
 
-    // 刪除處理
     function deleteStudent(id) {
       if (confirm(`確定要刪除學員 ${id} 嗎？`)) database.ref("students/" + id).remove();
     }
@@ -481,7 +505,7 @@
       if (confirm("確定要取消此堂預約嗎？")) database.ref(`students/${studentId}/bookings/${bookingKey}`).remove();
     }
 
-    // 修改預約彈窗
+    // 修改預約彈窗（必須填寫經手同事）
     function openEditBookingModal(studentId, bookingKey, currentDate, currentClass) {
       const student = studentsData[studentId];
       if (!student) return;
@@ -537,8 +561,14 @@
       const newClass = document.getElementById("edit-booking-class").value;
       const staffName = document.getElementById("edit-staff-name").value.trim();
 
-      if (!newDate || !newClass || !staffName) {
-        alert("⚠️ 所有欄位（包含經手同事）皆為必填！");
+      if (!staffName) {
+        alert("⚠️ 必須填寫經手同事姓名！請輸入處理同事名字。");
+        document.getElementById("edit-staff-name").focus();
+        return;
+      }
+
+      if (!newDate || !newClass) {
+        alert("⚠️ 請完整填寫預約日期與班別！");
         return;
       }
 
@@ -553,7 +583,7 @@
       });
     }
 
-    // 預約彈窗
+    // 多堂預約彈窗（必須填寫經手同事）
     function openBookingModal(studentId) {
       const student = studentsData[studentId];
       if (!student) return;
@@ -623,13 +653,14 @@
     function submitMultipleBookings(studentId) {
       const count = parseInt(document.getElementById("booking-count").value, 10);
       const staffName = document.getElementById("booking-staff-name").value.trim();
-      let newBookings = [];
 
       if (!staffName) {
-        alert("⚠️ 請輸入處理同事名字！");
+        alert("⚠️ 必須填寫經手同事姓名！請輸入處理同事名字。");
+        document.getElementById("booking-staff-name").focus();
         return;
       }
 
+      let newBookings = [];
       for (let i = 0; i < count; i++) {
         const date = document.getElementById(`row-date-${i}`).value;
         const selectedClass = document.getElementById(`row-class-${i}`).value;
@@ -659,7 +690,6 @@
       document.getElementById("booking-modal").style.display = "none";
     }
 
-    // 匯出 Excel
     function exportToExcel() {
       if (typeof XLSX === 'undefined') {
         alert("Excel 模組載入中，請稍後再試...");
