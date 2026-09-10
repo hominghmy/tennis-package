@@ -81,7 +81,7 @@ function switchTab(tabId) {
   document.getElementById(tabId).classList.add("active");
 }
 
-// 5. 表單提交：新增/續購學員套票
+// 5. 表單提交：新增/續購學員套票 (已加入自動累加舊套票堂數邏輯)
 document.getElementById("student-form").addEventListener("submit", function(e) {
   e.preventDefault();
   
@@ -95,6 +95,7 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
   const existingStudent = studentsData[studentId];
 
   if (existingStudent) {
+    // 若學生已存在，累加套票堂數並保留原有的 bookings
     const updatedTotalPackage = (existingStudent.totalPackage || 0) + inputPackage;
 
     database.ref("students/" + studentId).update({
@@ -111,6 +112,7 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
     });
 
   } else {
+    // 新建學員資料
     const newStudent = {
       name: name,
       studentId: studentId,
@@ -130,7 +132,7 @@ document.getElementById("student-form").addEventListener("submit", function(e) {
   }
 });
 
-// 6. 渲染學員列表
+// 6. 渲染學員列表 (含修改與取消預約按鈕)
 function renderStudents() {
   const listContainer = document.getElementById("student-list");
   const keyword = document.getElementById("search-student").value.toLowerCase();
@@ -157,6 +159,7 @@ function renderStudents() {
 
       let bookingsHtml = "";
       if (student.bookings) {
+        // 按日期由早到晚排序
         const bookingList = Object.keys(student.bookings).map(bKey => ({
           key: bKey,
           ...student.bookings[bKey]
@@ -207,7 +210,7 @@ function renderStudents() {
   });
 }
 
-// 7. 渲染日曆課表總覽 (依當日所有班別分類顯示)
+// 7. 渲染日曆課表總覽 (依當日所有班別分類顯示，無人預約時依然列出所有班別)
 function renderSchedule() {
   const targetDate = document.getElementById("schedule-date").value;
   const summaryContainer = document.getElementById("schedule-summary");
@@ -262,12 +265,13 @@ function renderSchedule() {
   `;
   summaryContainer.appendChild(headerSummary);
 
+  // 若該星期幾本身沒有排定任何固定班別
   if (availableClasses.length === 0 && bookingsByClass["其他/自訂班別"].length === 0) {
     summaryContainer.innerHTML += `<p style="color: #64748b; padding: 10px;">該日期（${weekdayName}）無排定班別。</p>`;
     return;
   }
 
-  // 遍歷當天每一個固定班別生成獨立卡片
+  // 遍歷當天每一個固定班別生成獨立卡片（即使 0 人預約也會完整顯示）
   availableClasses.forEach(className => {
     const slotCard = document.createElement("div");
     slotCard.className = "class-slot-card";
