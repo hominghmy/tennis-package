@@ -1,391 +1,699 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>網球會所套票與排課管理系統</title>
-    
-    <!-- Firebase SDK (v8 相容版) -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>網球班套票與課表預約系統</title>
+  
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <!-- SheetJS 函式庫 (用於匯出 Excel) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-    <style>
-        :root {
-            --primary-color: #2563eb;
-            --success-color: #16a34a;
-            --warning-color: #d97706;
-            --danger-color: #dc2626;
-            --bg-color: #f8fafc;
-            --card-bg: #ffffff;
-            --text-color: #1e293b;
-            --border-color: #e2e8f0;
-        }
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-color: #1e293b;
+      --border-color: #e2e8f0;
+    }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 0; }
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            padding: 1rem;
-            max-width: 900px;
-            margin: 0 auto;
-        }
+    /* 鎖定畫面 */
+    #lock-screen {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100vh; background: #0f172a; color: white;
+    }
+    .lock-box { background: #1e293b; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; }
+    .lock-box input { padding: 0.5rem; font-size: 1rem; margin-bottom: 1rem; width: 100%; text-align: center; border-radius: 4px; border: 1px solid #475569; }
 
-        /* 密碼鎖畫面樣式 */
-        #lock-screen {
-            display: flex;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: #0f172a;
-            z-index: 9999;
-            align-items: center;
-            justify-content: center;
-            padding: 1rem;
-        }
+    /* 主內容區 */
+    #app-content { display: none; padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 10px; }
 
-        .lock-card {
-            background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            width: 100%;
-            max-width: 360px;
-            text-align: center;
-        }
+    /* 按鈕與標籤 */
+    .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+    .btn.primary { background-color: #2563eb; color: white; }
+    .btn.primary:hover { background-color: #1d4ed8; }
+    .btn.success { background-color: #16a34a; color: white; }
+    .btn.success:hover { background-color: #15803d; }
+    .btn.warning { background-color: #d97706; color: white; }
+    .btn.danger { background-color: #dc2626; color: white; }
+    .btn.sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
 
-        .lock-card h2 {
-            margin-bottom: 0.5rem;
-            color: #0f172a;
-            font-size: 1.3rem;
-        }
+    /* 表單與卡片 */
+    .card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .form-group label { font-size: 0.85rem; font-weight: 600; color: #475569; }
+    .form-group input, .form-group select { padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; }
 
-        .lock-card p {
-            color: #64748b;
-            font-size: 0.88rem;
-            margin-bottom: 1.5rem;
-        }
+    /* 頁籤分頁 */
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 2px solid var(--border-color); }
+    .tab-btn { padding: 0.6rem 1.2rem; border: none; background: none; cursor: pointer; font-weight: 600; color: #64748b; }
+    .tab-btn.active { color: var(--primary-color); border-bottom: 2px solid var(--primary-color); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
 
-        /* 主應用程式畫面預設隱藏 */
-        #app-content {
-            display: none;
-        }
+    /* 學員卡片 */
+    .student-card { background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 0.8rem; }
+    .student-header { display: flex; justify-content: space-between; align-items: center; }
+    .badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .badge.paid { background: #dcfce7; color: #15803d; }
+    .badge.unpaid { background: #fee2e2; color: #b91c1c; }
+    .dates-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+    .date-chip { background: #f1f5f9; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.8rem; display: flex; align-items: center; }
 
-        header {
-            text-align: center;
-            margin-bottom: 1.5rem;
-            position: relative;
-        }
-
-        header h1 {
-            font-size: 1.5rem;
-            color: #0f172a;
-        }
-
-        #sync-status {
-            font-size: 0.85rem;
-            color: #64748b;
-            margin-top: 0.3rem;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid var(--border-color);
-        }
-
-        .tab-btn {
-            padding: 0.6rem 1.2rem;
-            border: none;
-            background: none;
-            font-size: 1rem;
-            font-weight: bold;
-            color: #64748b;
-            cursor: pointer;
-            border-bottom: 3px solid transparent;
-        }
-
-        .tab-btn.active {
-            color: var(--primary-color);
-            border-bottom-color: var(--primary-color);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .card {
-            background: var(--card-bg);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 0.8rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.3rem;
-        }
-
-        label {
-            font-size: 0.85rem;
-            font-weight: bold;
-            color: #475569;
-        }
-
-        input, select {
-            padding: 0.5rem;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
-            font-size: 0.95rem;
-        }
-
-        .btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 4px;
-            font-weight: bold;
-            cursor: pointer;
-            color: white;
-            transition: opacity 0.2s;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
-        }
-
-        .btn.primary { background-color: var(--primary-color); }
-        .btn.success { background-color: var(--success-color); }
-        .btn.warning { background-color: var(--warning-color); }
-        .btn.danger { background-color: var(--danger-color); }
-        .btn.sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
-
-        .student-card {
-            background: white;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 0.8rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .student-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
-
-        .badge.paid { background: #dcfce7; color: #15803d; }
-        .badge.unpaid { background: #fee2e2; color: #b91c1c; }
-
-        .dates-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-        }
-
-        .date-chip {
-            background: #f1f5f9;
-            padding: 0.4rem 0.6rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        /* 課表專屬樣式 */
-        .class-slot-card {
-            background: white;
-            border-left: 4px solid var(--primary-color);
-            padding: 0.8rem;
-            margin-bottom: 0.8rem;
-            border-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-
-        .class-slot-header {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            margin-bottom: 0.5rem;
-            color: #0f172a;
-        }
-
-        .student-tag-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.4rem;
-        }
-
-        .student-tag {
-            background: #e0f2fe;
-            color: #0369a1;
-            padding: 0.2rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-
-        /* 彈窗樣式 */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.5);
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 1rem;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 8px;
-            width: 100%;
-            max-width: 500px;
-            max-height: 90vh;
-            overflow-y: auto;
-            padding: 1.2rem;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .booking-row {
-            background: #f8fafc;
-            padding: 0.6rem;
-            border-radius: 4px;
-            margin-bottom: 0.5rem;
-            border: 1px solid var(--border-color);
-        }
-    </style>
+    /* Modal 彈窗 */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: white; padding: 1.5rem; border-radius: 8px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+  </style>
 </head>
 <body>
 
-    <!-- 密碼驗證頁面 -->
-    <div id="lock-screen">
-        <div class="lock-card">
-            <h2>🔒 系統存取驗證</h2>
-            <p>請輸入密碼以瀏覽與管理課表系統</p>
-            <form onsubmit="verifyPassword(event)">
-                <div class="form-group" style="margin-bottom: 1rem;">
-                    <input type="password" id="sys-password" placeholder="請輸入訪問密碼" required style="text-align: center; font-size: 1.1rem; padding: 0.6rem;">
-                </div>
-                <button type="submit" class="btn primary" style="width: 100%; padding: 0.7rem; font-size: 1rem;">解鎖進入系統</button>
-            </form>
-            <p id="lock-error" style="color: #dc2626; margin-top: 0.8rem; margin-bottom: 0; display: none; font-weight: bold;">❌ 密碼錯誤，請重試！</p>
-        </div>
+  <!-- 1. 鎖定畫面 -->
+  <div id="lock-screen">
+    <div class="lock-box">
+      <h2>網球班管理系統</h2>
+      <form onsubmit="verifyPassword(event)">
+        <input type="password" id="sys-password" placeholder="請輸入密碼" required>
+        <button type="submit" class="btn primary" style="width: 100%;">登入系統</button>
+      </form>
+      <p id="lock-error" style="color: #ef4444; display: none; margin-top: 0.5rem; font-size: 0.85rem;">密碼不正確！</p>
+    </div>
+  </div>
+
+  <!-- 2. 主內容區域 -->
+  <div id="app-content">
+    <div class="header">
+      <div>
+        <h1 style="margin: 0; font-size: 1.5rem;">🎾 網球班套票與課表預約系統</h1>
+        <span id="sync-status" style="font-size: 0.85rem; color: #64748b;">🟡 連線中...</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <!-- 新增：匯出 Excel 按鈕 -->
+        <button class="btn success" onclick="exportToExcel()">📊 匯出 Excel 紀錄</button>
+        <button class="btn danger" onclick="logoutSystem()">登出</button>
+      </div>
     </div>
 
-    <!-- 主內容頁面 -->
-    <div id="app-content">
-        <header>
-            <h1>🎾 網球會所套票與排課系統</h1>
-            <div id="sync-status">🟡 連線中...</div>
-            <button class="btn danger sm" onclick="logoutSystem()" style="position: absolute; right: 0; top: 0;">登出</button>
-        </header>
-
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('tab-students')">👥 學員與套票管理</button>
-            <button class="tab-btn" onclick="switchTab('tab-schedule')">📅 日期課表總覽</button>
+    <!-- 新增 / 續購學員表單 -->
+    <div class="card">
+      <h3 style="margin-top: 0;">➕ 新增學員 / 續購套票</h3>
+      <form id="student-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>學員姓名：</label>
+            <input type="text" id="name" required placeholder="例如：張小明">
+          </div>
+          <div class="form-group">
+            <label>學員編號：</label>
+            <!-- 更改：預設範例為 SPC0001 -->
+            <input type="text" id="student-id" required placeholder="例：SPC0001">
+          </div>
+          <div class="form-group">
+            <label>付款狀態：</label>
+            <select id="payment">
+              <option value="已付款">已付款</option>
+              <option value="未付款">未付款</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>套票堂數：</label>
+            <input type="number" id="total-package" min="1" value="4" required>
+          </div>
+          <div class="form-group">
+            <label style="color: #dc2626;">經手同事姓名：</label>
+            <input type="text" id="staff-name" required placeholder="請輸入處理 colleagues 名字">
+          </div>
         </div>
-
-        <!-- 分頁 1：學員管理 -->
-        <div id="tab-students" class="tab-content active">
-            <!-- 新增學員表單 -->
-            <div class="card">
-                <h3 style="margin-bottom: 0.8rem; font-size: 1.1rem;">新增學員套票</h3>
-                <form id="student-form">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label>學員姓名 *</label>
-                            <input type="text" id="name" required placeholder="例：張小明">
-                        </div>
-                        <div class="form-group">
-                            <label>學生編號 *</label>
-                            <input type="text" id="student-id" required placeholder="例：S1001">
-                        </div>
-                        <div class="form-group">
-                            <label>付款狀態</label>
-                            <select id="payment">
-                                <option value="已付款">已付款</option>
-                                <option value="未付款">未付款</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>購買套票堂數</label>
-                            <input type="number" id="total-package" min="1" value="10" required>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn primary" style="width: 100%;">新增學員</button>
-                </form>
-            </div>
-
-            <!-- 學員搜尋與列表 -->
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-                    <h3>學員名單與預約紀錄</h3>
-                    <input type="text" id="search-student" placeholder="🔍 搜尋姓名或學號..." oninput="renderStudents()" style="width: 200px;">
-                </div>
-                <div id="student-list"></div>
-            </div>
-        </div>
-
-        <!-- 分頁 2：課表總覽 -->
-        <div id="tab-schedule" class="tab-content">
-            <div class="card">
-                <div class="form-group" style="max-width: 250px; margin-bottom: 1rem;">
-                    <label>選擇檢視日期：</label>
-                    <input type="date" id="schedule-date" onchange="renderSchedule()">
-                </div>
-                <div id="schedule-summary"></div>
-            </div>
-        </div>
-
-        <!-- 批次預約/改期彈窗 -->
-        <div id="booking-modal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 id="modal-title">預約上課</h3>
-                    <button onclick="closeModal()" style="border:none; background:none; font-size:1.2rem; cursor:pointer;">✖</button>
-                </div>
-                <div id="modal-body"></div>
-            </div>
-        </div>
+        <button type="submit" class="btn primary">儲存 / 更新學員</button>
+      </form>
     </div>
 
-    <!-- 載入主邏輯腳本 -->
-    <script src="script.js"></script>
+    <!-- 分頁選單 -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-students')">👥 學員列表與預約</button>
+      <button class="tab-btn" onclick="switchTab('tab-schedule')">📅 日曆課表總覽</button>
+    </div>
+
+    <!-- 分頁 1：學員列表 -->
+    <div id="tab-students" class="tab-content active">
+      <div style="margin-bottom: 1rem;">
+        <input type="text" id="search-student" placeholder="🔍 搜尋學員姓名或編號..." oninput="renderStudents()" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 6px;">
+      </div>
+      <div id="student-list"></div>
+    </div>
+
+    <!-- 分頁 2：日曆課表總覽 -->
+    <div id="tab-schedule" class="tab-content">
+      <div class="card">
+        <div class="form-group" style="max-width: 300px;">
+          <label>選擇檢視日期：</label>
+          <input type="date" id="schedule-date" onchange="renderSchedule()">
+        </div>
+      </div>
+      <div id="schedule-summary"></div>
+    </div>
+  </div>
+
+  <!-- 3. 通用 Modal 彈窗 (預約 / 修改) -->
+  <div id="booking-modal" class="modal">
+    <div class="modal-content">
+      <h3 id="modal-title" style="margin-top: 0;">預約課表</h3>
+      <div id="modal-body"></div>
+      <div style="margin-top: 1rem; text-align: right;">
+        <button class="btn danger sm" onclick="closeModal()">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript 邏輯程式碼 -->
+  <script>
+    // 1. Firebase 初始化設定 (請填入你的 Firebase 專案設定)
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "tennis-package.firebaseapp.com",
+      databaseURL: "https://tennis-package-default-rtdb.firebaseio.com",
+      projectId: "tennis-package",
+      storageBucket: "tennis-package.appstop.com",
+      messagingSenderId: "897402153829",
+      appId: "1:897402153829:web:18069dae9187cc554cf8c"
+    };
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const database = firebase.database();
+
+    let studentsData = {};
+
+    const SCHEDULE_BY_DAY = {
+      1: ["Red Ball 1530-1630", "Orange Ball 1630-1730", "Green Ball 1730-1900"],
+      2: ["Red Ball 1630-1730", "Orange Ball 1730-1830", "Green Ball 1830-2000"],
+      3: ["Orange Ball 1630-1730", "Yellow Ball 1730-1930"],
+      4: ["Red Ball 1530-1630", "Orange Ball 1630-1730", "Green Ball 1730-1900"],
+      5: ["Orange Ball 1630-1730", "Yellow Ball 1730-1930"],
+      6: ["Red Ball 0900-1000", "Red Ball 1000-1100", "Green Ball 1030-1200", "P&P 1500-1700"],
+      0: ["P&P 1000-1200"]
+    };
+
+    const WEEKDAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+
+    // 密碼驗證
+    function verifyPassword(event) {
+      event.preventDefault();
+      const pwdInput = document.getElementById("sys-password").value;
+      const errorMsg = document.getElementById("lock-error");
+
+      if (pwdInput === "coscourse") {
+        document.getElementById("lock-screen").style.display = "none";
+        document.getElementById("app-content").style.display = "block";
+        errorMsg.style.display = "none";
+        
+        initFirebaseListener();
+        document.getElementById("schedule-date").value = new Date().toISOString().split('T')[0];
+      } else {
+        errorMsg.style.display = "block";
+      }
+    }
+
+    function logoutSystem() {
+      document.getElementById("sys-password").value = "";
+      document.getElementById("lock-screen").style.display = "flex";
+      document.getElementById("app-content").style.display = "none";
+    }
+
+    // 監聽 Firebase
+    function initFirebaseListener() {
+      database.ref(".info/connected").on("value", (snap) => {
+        const statusElement = document.getElementById("sync-status");
+        if (statusElement) {
+          statusElement.innerText = snap.val() === true ? "🟢 已雲端同步" : "🟡 連線中...";
+        }
+      });
+
+      database.ref("students").on("value", (snapshot) => {
+        studentsData = snapshot.val() || {};
+        renderStudents();
+        renderSchedule();
+      });
+    }
+
+    // 切換頁籤
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(content => content.classList.remove("active"));
+      
+      if (event && event.target) {
+        event.target.classList.add("active");
+      }
+      document.getElementById(tabId).classList.add("active");
+    }
+
+    // 提交表單：新增/續購學員
+    document.getElementById("student-form").addEventListener("submit", function(e) {
+      e.preventDefault();
+      
+      const name = document.getElementById("name").value.trim();
+      const studentId = document.getElementById("student-id").value.trim();
+      const payment = document.getElementById("payment").value;
+      const inputPackage = parseInt(document.getElementById("total-package").value, 10) || 0;
+      let staffName = document.getElementById("staff-name").value.trim();
+
+      if (!staffName) {
+        alert("⚠️ 請輸入處理同事姓名！");
+        return;
+      }
+
+      if (!name || !studentId) return;
+
+      const existingStudent = studentsData[studentId];
+      const timeStamp = new Date().toLocaleString("zh-TW");
+
+      if (existingStudent) {
+        const updatedTotalPackage = (existingStudent.totalPackage || 0) + inputPackage;
+
+        database.ref("students/" + studentId).update({
+          name: name,
+          payment: payment,
+          totalPackage: updatedTotalPackage,
+          lastUpdatedBy: staffName,
+          lastUpdatedAt: timeStamp
+        }).then(() => {
+          alert(`學員 ${name} (${studentId}) 續購成功！\n經手同事：${staffName}\n新增 ${inputPackage} 堂，總堂數：${updatedTotalPackage} 堂。`);
+          document.getElementById("student-form").reset();
+        }).catch((error) => {
+          alert("更新失敗：" + error.message);
+        });
+
+      } else {
+        const newStudent = {
+          name: name,
+          studentId: studentId,
+          payment: payment,
+          totalPackage: inputPackage,
+          createdBy: staffName,
+          createdAt: timeStamp,
+          bookings: {}
+        };
+
+        database.ref("students/" + studentId).set(newStudent).then(() => {
+          alert(`學員新增成功！\n經手同事：${staffName}`);
+          document.getElementById("student-form").reset();
+        }).catch((error) => {
+          alert("新增失敗：" + error.message);
+        });
+      }
+    });
+
+    // 渲染學員列表
+    function renderStudents() {
+      const listContainer = document.getElementById("student-list");
+      const keyword = document.getElementById("search-student").value.toLowerCase();
+      listContainer.innerHTML = "";
+
+      const keys = Object.keys(studentsData);
+      if (keys.length === 0) {
+        listContainer.innerHTML = "<p style='color: #64748b;'>目前無學員資料。</p>";
+        return;
+      }
+
+      keys.forEach(id => {
+        const student = studentsData[id];
+        if (student.name.toLowerCase().includes(keyword) || id.toLowerCase().includes(keyword)) {
+          const card = document.createElement("div");
+          card.className = "student-card";
+          
+          const isPaid = student.payment === "已付款";
+          const badgeClass = isPaid ? "badge paid" : "badge unpaid";
+
+          const bookedCount = student.bookings ? Object.keys(student.bookings).length : 0;
+          const totalPackage = student.totalPackage || 0;
+          const remainingCount = totalPackage - bookedCount;
+
+          let bookingsHtml = "";
+          if (student.bookings) {
+            const bookingList = Object.keys(student.bookings).map(bKey => ({
+              key: bKey,
+              ...student.bookings[bKey]
+            })).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+            bookingsHtml = `<div class="dates-grid">`;
+            bookingList.forEach(booking => {
+              const staffTag = booking.updatedBy ? ` (修改: ${booking.updatedBy})` : (booking.createdBy ? ` (經手: ${booking.createdBy})` : "");
+              bookingsHtml += `
+                <div class="date-chip">
+                  <span>📅 ${booking.date} | ${booking.className || booking.time}${staffTag}</span>
+                  <div style="display: flex; gap: 2px; margin-left: 6px;">
+                    <button class="btn warning sm" style="padding:0px 4px;" title="修改預約" onclick="openEditBookingModal('${id}', '${booking.key}', '${booking.date}', '${booking.className || ''}')">✏️</button>
+                    <button class="btn danger sm" style="padding:0px 4px;" title="取消預約" onclick="deleteBooking('${id}', '${booking.key}')">✕</button>
+                  </div>
+                </div>
+              `;
+            });
+            bookingsHtml += `</div>`;
+          } else {
+            bookingsHtml = `<div style="font-size:0.85rem; color:#94a3b8; margin-top:0.4rem;">尚未預約任何班別</div>`;
+          }
+
+          card.innerHTML = `
+            <div class="student-header">
+              <div>
+                <strong>${student.name}</strong> (${id})
+                <span class="${badgeClass}">${student.payment}</span>
+              </div>
+              <div>
+                <button class="btn warning sm" onclick="openBookingModal('${id}')">📅 預約課表</button>
+                <button class="btn danger sm" onclick="deleteStudent('${id}')">🗑️ 刪除</button>
+              </div>
+            </div>
+            <div style="font-size: 0.9rem; color: #475569; margin-top: 4px;">
+              套票總堂數：<strong>${totalPackage}</strong> 堂 | 
+              已預約：<strong>${bookedCount}</strong> 堂 | 
+              剩餘堂數：<strong style="color: ${remainingCount >= 0 ? '#16a34a' : '#dc2626'}; font-size: 1rem;">${remainingCount}</strong> 堂
+            </div>
+            ${bookingsHtml}
+          `;
+          listContainer.appendChild(card);
+        }
+      });
+    }
+
+    // 渲染課表
+    function renderSchedule() {
+      const targetDate = document.getElementById("schedule-date").value;
+      const summaryContainer = document.getElementById("schedule-summary");
+      summaryContainer.innerHTML = "";
+
+      if (!targetDate) return;
+
+      const parts = targetDate.split('-');
+      const selectedDateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+      const dayOfWeek = selectedDateObj.getDay();
+      const weekdayName = WEEKDAY_NAMES[dayOfWeek];
+
+      const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
+      let bookingsByClass = {};
+      availableClasses.forEach(c => bookingsByClass[c] = []);
+      bookingsByClass["其他/自訂班別"] = [];
+
+      let totalDailyCount = 0;
+
+      Object.keys(studentsData).forEach(id => {
+        const student = studentsData[id];
+        if (student.bookings) {
+          Object.keys(student.bookings).forEach(bKey => {
+            const booking = student.bookings[bKey];
+            if (booking.date === targetDate) {
+              totalDailyCount++;
+              let rawClassName = booking.className || booking.time || "";
+              let cleanClassName = rawClassName.replace(/^(星期[一二三四五六日]\s*)/, "").trim();
+
+              if (bookingsByClass[cleanClassName]) {
+                bookingsByClass[cleanClassName].push({ name: student.name, id: id });
+              } else {
+                bookingsByClass["其他/自訂班別"].push({ name: student.name, id: id, originalClass: rawClassName });
+              }
+            }
+          });
+        }
+      });
+
+      const headerSummary = document.createElement("div");
+      headerSummary.style.cssText = "font-weight: bold; font-size: 1rem; color: #1e293b; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #2563eb;";
+      headerSummary.innerHTML = `
+        <span>📅 ${targetDate} (${weekdayName}) 所有班別課表</span>
+        <span style="color: #2563eb;">當日總人次：${totalDailyCount} 人次</span>
+      `;
+      summaryContainer.appendChild(headerSummary);
+
+      availableClasses.forEach(className => {
+        const slotCard = document.createElement("div");
+        slotCard.style.cssText = "background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 12px;";
+
+        const students = bookingsByClass[className];
+        let studentsHTML = students.length > 0
+          ? students.map(s => `<span style="display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; margin-right: 6px; margin-top: 6px;">👤 ${s.name} (${s.id})</span>`).join("")
+          : `<span style="font-size: 0.85rem; color: #94a3b8;">尚無學員預約</span>`;
+
+        slotCard.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px; margin-bottom: 8px;">
+            <strong style="color: #0f172a; font-size: 0.95rem;">🎾 ${className}</strong>
+            <span style="font-size: 0.85rem; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 12px;">${students.length} 人</span>
+          </div>
+          <div>${studentsHTML}</div>
+        `;
+        summaryContainer.appendChild(slotCard);
+      });
+    }
+
+    // 刪除操作
+    function deleteStudent(id) {
+      if (confirm(`確定要刪除學員 ${id} 嗎？`)) database.ref("students/" + id).remove();
+    }
+
+    function deleteBooking(studentId, bookingKey) {
+      if (confirm("確定要取消此堂預約嗎？")) database.ref(`students/${studentId}/bookings/${bookingKey}`).remove();
+    }
+
+    // 修改預約彈窗
+    function openEditBookingModal(studentId, bookingKey, currentDate, currentClass) {
+      const student = studentsData[studentId];
+      if (!student) return;
+
+      document.getElementById("modal-title").innerText = `修改 ${student.name} 的預約紀錄`;
+      document.getElementById("modal-body").innerHTML = `
+        <div style="padding: 10px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px;">
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem;">選擇新日期：</label>
+            <input type="date" id="edit-booking-date" value="${currentDate}" onchange="updateEditClassOptions()" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+            <span id="edit-date-hint" style="font-size: 0.8rem; color: #64748b; margin-top: 2px; display: block;"></span>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem;">選擇新班別：</label>
+            <select id="edit-booking-class" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;"></select>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #dc2626;">修改經手同事姓名 (必填)：</label>
+            <input type="text" id="edit-staff-name" placeholder="請輸入您的名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+          </div>
+        </div>
+        <button class="btn primary" style="width: 100%; margin-top: 1rem;" onclick="submitEditBooking('${studentId}', '${bookingKey}')">確認儲存修改</button>
+      `;
+
+      document.getElementById("booking-modal").style.display = "flex";
+      updateEditClassOptions(currentClass);
+    }
+
+    function updateEditClassOptions(presetClass = "") {
+      const dateInput = document.getElementById("edit-booking-date").value;
+      const classSelect = document.getElementById("edit-booking-class");
+      const hint = document.getElementById("edit-date-hint");
+
+      if (!dateInput) return;
+      const parts = dateInput.split('-');
+      const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      const dayOfWeek = selectedDate.getDay();
+      const weekdayName = WEEKDAY_NAMES[dayOfWeek];
+
+      hint.innerText = `💡 ${weekdayName}`;
+      const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
+
+      if (availableClasses.length === 0) {
+        classSelect.innerHTML = `<option value="">當日無可選擇之班別</option>`;
+      } else {
+        classSelect.innerHTML = availableClasses.map(c => `<option value="${weekdayName} ${c}">${c}</option>`).join("");
+        if (presetClass) classSelect.value = presetClass;
+      }
+    }
+
+    function submitEditBooking(studentId, bookingKey) {
+      const newDate = document.getElementById("edit-booking-date").value;
+      const newClass = document.getElementById("edit-booking-class").value;
+      const staffName = document.getElementById("edit-staff-name").value.trim();
+
+      if (!newDate || !newClass || !staffName) {
+        alert("⚠️ 所有欄位（包含經手同事）皆為必填！");
+        return;
+      }
+
+      database.ref(`students/${studentId}/bookings/${bookingKey}`).update({
+        date: newDate,
+        className: newClass,
+        updatedBy: staffName,
+        updatedAt: new Date().toLocaleString("zh-TW")
+      }).then(() => {
+        alert(`預約修改成功！\n經手同事：${staffName}`);
+        closeModal();
+      });
+    }
+
+    // 多堂預約彈窗
+    function openBookingModal(studentId) {
+      const student = studentsData[studentId];
+      if (!student) return;
+
+      const bookedCount = student.bookings ? Object.keys(student.bookings).length : 0;
+      const totalPackage = student.totalPackage || 0;
+      const remainingCount = totalPackage - bookedCount;
+
+      document.getElementById("modal-title").innerText = `為 ${student.name} 預約課表`;
+      document.getElementById("modal-body").innerHTML = `
+        <div style="background: #f1f5f9; padding: 10px; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem;">
+          套票總額：<b>${totalPackage}</b> 堂 | 剩餘堂數：<b>${remainingCount}</b> 堂
+        </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label><b>選擇預約堂數：</b></label>
+          <select id="booking-count" onchange="generateBookingRows('${studentId}')" style="width: 100%; padding: 0.4rem;">
+            ${[1,2,3,4,5,6,7,8,9,10].map(num => `<option value="${num}">${num} 堂</option>`).join("")}
+          </select>
+        </div>
+        <div id="booking-rows-container"></div>
+        <div style="margin-top: 10px;">
+          <label style="display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9rem; color: #dc2626;">經手同事姓名 (必填)：</label>
+          <input type="text" id="booking-staff-name" placeholder="請輸入您的名字" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px;">
+        </div>
+        <button class="btn primary" style="width: 100%; margin-top: 1rem;" onclick="submitMultipleBookings('${studentId}')">確認新增所有預約</button>
+      `;
+
+      document.getElementById("booking-modal").style.display = "flex";
+      generateBookingRows(studentId);
+    }
+
+    function generateBookingRows(studentId) {
+      const count = parseInt(document.getElementById("booking-count").value, 10);
+      const container = document.getElementById("booking-rows-container");
+      container.innerHTML = "";
+
+      for (let i = 0; i < count; i++) {
+        const rowDiv = document.createElement("div");
+        rowDiv.style.cssText = "border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px;";
+        rowDiv.innerHTML = `
+          <div style="font-weight: bold; font-size: 0.85rem; color: #2563eb;">第 ${i + 1} 堂：</div>
+          <div style="display: flex; gap: 8px;">
+            <input type="date" id="row-date-${i}" onchange="updateRowClassOptions(${i})" style="flex: 1; padding: 0.4rem;">
+            <select id="row-class-${i}" style="flex: 1.5; padding: 0.4rem;"><option value="">請選擇日子</option></select>
+          </div>
+        `;
+        container.appendChild(rowDiv);
+      }
+    }
+
+    function updateRowClassOptions(index) {
+      const dateInput = document.getElementById(`row-date-${index}`).value;
+      const classSelect = document.getElementById(`row-class-${index}`);
+
+      if (!dateInput) return;
+      const parts = dateInput.split('-');
+      const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
+      const dayOfWeek = selectedDate.getDay();
+      const weekdayName = WEEKDAY_NAMES[dayOfWeek];
+      const availableClasses = SCHEDULE_BY_DAY[dayOfWeek] || [];
+
+      classSelect.innerHTML = availableClasses.length === 0 
+        ? `<option value="">當日無課</option>` 
+        : availableClasses.map(c => `<option value="${weekdayName} ${c}">${c}</option>`).join("");
+    }
+
+    function submitMultipleBookings(studentId) {
+      const count = parseInt(document.getElementById("booking-count").value, 10);
+      const staffName = document.getElementById("booking-staff-name").value.trim();
+      let newBookings = [];
+
+      if (!staffName) {
+        alert("⚠️ 請輸入經手同事姓名！");
+        return;
+      }
+
+      for (let i = 0; i < count; i++) {
+        const date = document.getElementById(`row-date-${i}`).value;
+        const selectedClass = document.getElementById(`row-class-${i}`).value;
+
+        if (!date || !selectedClass) {
+          alert(`請完整填寫第 ${i + 1} 堂的預約內容！`);
+          return;
+        }
+
+        newBookings.push({ 
+          date: date, 
+          className: selectedClass,
+          createdBy: staffName,
+          createdAt: new Date().toLocaleString("zh-TW")
+        });
+      }
+
+      let promises = newBookings.map(b => database.ref(`students/${studentId}/bookings`).push().set(b));
+
+      Promise.all(promises).then(() => {
+        alert(`成功預約 ${count} 堂課程！\n經手同事：${staffName}`);
+        closeModal();
+      });
+    }
+
+    function closeModal() {
+      document.getElementById("booking-modal").style.display = "none";
+    }
+
+    // 匯出 Excel 核心函數
+    function exportToExcel() {
+      if (typeof XLSX === 'undefined') {
+        alert("Excel 模組載入中，請稍後再試...");
+        return;
+      }
+
+      let excelRows = [];
+
+      Object.keys(studentsData).forEach(id => {
+        const student = studentsData[id];
+        const totalPackage = student.totalPackage || 0;
+        const bookings = student.bookings || {};
+        const bookedCount = Object.keys(bookings).length;
+        const remainingCount = totalPackage - bookedCount;
+
+        if (Object.keys(bookings).length === 0) {
+          excelRows.push({
+            "學員編號": id,
+            "學員姓名": student.name,
+            "付款狀態": student.payment || "",
+            "總套票堂數": totalPackage,
+            "已預約堂數": bookedCount,
+            "剩餘堂數": remainingCount,
+            "預約日期": "無預約",
+            "預約班別": "-",
+            "新增/續期同事": student.lastUpdatedBy || student.createdBy || "-",
+            "預約/修改同事": "-"
+          });
+        } else {
+          Object.keys(bookings).forEach(bKey => {
+            const b = bookings[bKey];
+            excelRows.push({
+              "學員編號": id,
+              "學員姓名": student.name,
+              "付款狀態": student.payment || "",
+              "總套票堂數": totalPackage,
+              "已預約堂數": bookedCount,
+              "剩餘堂數": remainingCount,
+              "預約日期": b.date || "",
+              "預約班別": b.className || b.time || "",
+              "新增/續期同事": student.lastUpdatedBy || student.createdBy || "-",
+              "預約/修改同事": b.updatedBy || b.createdBy || "-"
+            });
+          });
+        }
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(excelRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "學員課表總表");
+
+      const today = new Date().toISOString().split('T')[0];
+      XLSX.writeFile(workbook, `網球課表紀錄_${today}.xlsx`);
+    }
+  </script>
 </body>
 </html>
