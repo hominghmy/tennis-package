@@ -437,7 +437,7 @@ function openBookingModal(studentId) {
   generateBookingRows(studentId);
 }
 
-// 生成預約列（包含第一堂變更時自動推算後續每週同一時段之監聽）
+// 生成預約列（同時掛載 onchange 與 oninput 事件雙重保護）
 function generateBookingRows(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const container = document.getElementById("booking-rows-container");
@@ -449,7 +449,7 @@ function generateBookingRows(studentId) {
     rowDiv.innerHTML = `
       <div style="font-weight: bold; font-size: 0.85rem; color: #2563eb;">第 ${i + 1} 堂：</div>
       <div style="display: flex; gap: 8px;">
-        <input type="date" id="row-date-${i}" onchange="handleRowDateChange(${i})" style="flex: 1; padding: 0.4rem;">
+        <input type="date" id="row-date-${i}" onchange="handleRowDateChange(${i})" oninput="handleRowDateChange(${i})" style="flex: 1; padding: 0.4rem;">
         <select id="row-class-${i}" onchange="handleRowClassChange(${i})" style="flex: 1.5; padding: 0.4rem;">
           <option value="">請先選擇日期</option>
         </select>
@@ -465,16 +465,20 @@ function handleRowDateChange(index) {
   const firstDateVal = document.getElementById("row-date-0").value;
 
   if (index === 0 && firstDateVal) {
-    const startDate = new Date(firstDateVal);
+    const parts = firstDateVal.split('-');
+    if (parts.length !== 3) return;
+
+    const startYear = parseInt(parts[0], 10);
+    const startMonth = parseInt(parts[1], 10) - 1;
+    const startDateNum = parseInt(parts[2], 10);
 
     for (let i = 0; i < count; i++) {
-      const nextDate = new Date(startDate);
-      nextDate.setDate(startDate.getDate() + (i * 7)); // 每週順延 7 天
+      // 安全精準加算天數
+      const nextDateObj = new Date(startYear, startMonth, startDateNum + (i * 7));
 
-      // 格式化為 YYYY-MM-DD
-      const year = nextDate.getFullYear();
-      const month = String(nextDate.getMonth() + 1).padStart(2, '0');
-      const day = String(nextDate.getDate()).padStart(2, '0');
+      const year = nextDateObj.getFullYear();
+      const month = String(nextDateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(nextDateObj.getDate()).padStart(2, '0');
       const formattedDate = `${year}-${month}-${day}`;
 
       const dateInput = document.getElementById(`row-date-${i}`);
@@ -484,7 +488,7 @@ function handleRowDateChange(index) {
       }
     }
     
-    // 若第 1 堂已選擇班別，同步自動帶入後續選單
+    // 同步把第 1 堂已選的班別帶入後續
     handleRowClassChange(0);
   } else {
     updateRowClassOptions(index);
@@ -498,6 +502,8 @@ function updateRowClassOptions(index) {
 
   if (!dateInput) return;
   const parts = dateInput.split('-');
+  if (parts.length !== 3) return;
+
   const selectedDate = new Date(parts[0], parts[1] - 1, parts[2]);
   const dayOfWeek = selectedDate.getDay();
   const weekdayName = WEEKDAY_NAMES[dayOfWeek];
@@ -523,7 +529,7 @@ function handleRowClassChange(index) {
 
     if (!firstClassVal) return;
 
-    // 取出不含星期字頭的班別名稱
+    // 清理字頭，抓出極簡班別名稱（例如 "Yellow Ball 1730-1930"）
     const pureClassName = firstClassVal.replace(/^(星期[一二三四五六日]\s*)/, "").trim();
 
     for (let i = 1; i < count; i++) {
@@ -638,3 +644,4 @@ function exportToExcel() {
   const today = new Date().toISOString().split('T')[0];
   XLSX.writeFile(workbook, `網球課表紀錄_${today}.xlsx`);
 }
+
