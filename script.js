@@ -81,33 +81,55 @@ function switchTab(tabId) {
   document.getElementById(tabId).classList.add("active");
 }
 
-// 5. 表單提交：新增學員
+// 5. 表單提交：新增/續購學員套票 (已加入自動累加舊套票堂數邏輯)
 document.getElementById("student-form").addEventListener("submit", function(e) {
   e.preventDefault();
   
   const name = document.getElementById("name").value.trim();
   const studentId = document.getElementById("student-id").value.trim();
   const payment = document.getElementById("payment").value;
-  const totalPackage = parseInt(document.getElementById("total-package").value, 10);
+  const inputPackage = parseInt(document.getElementById("total-package").value, 10) || 0;
 
   if (!name || !studentId) return;
 
-  const newStudent = {
-    name: name,
-    studentId: studentId,
-    payment: payment,
-    totalPackage: totalPackage,
-    bookings: {}
-  };
+  const existingStudent = studentsData[studentId];
 
-  database.ref("students/" + studentId).set(newStudent)
+  if (existingStudent) {
+    // 若學生已存在，累加套票堂數並保留原有的 bookings
+    const updatedTotalPackage = (existingStudent.totalPackage || 0) + inputPackage;
+
+    database.ref("students/" + studentId).update({
+      name: name,
+      payment: payment,
+      totalPackage: updatedTotalPackage
+    })
     .then(() => {
-      alert("學員新增成功！");
+      alert(`學員 ${name} (${studentId}) 續購成功！\n套票堂數已新增 ${inputPackage} 堂，現有總堂數：${updatedTotalPackage} 堂。`);
       document.getElementById("student-form").reset();
     })
     .catch((error) => {
-      alert("新增失敗：" + error.message);
+      alert("更新失敗：" + error.message);
     });
+
+  } else {
+    // 新建學員資料
+    const newStudent = {
+      name: name,
+      studentId: studentId,
+      payment: payment,
+      totalPackage: inputPackage,
+      bookings: {}
+    };
+
+    database.ref("students/" + studentId).set(newStudent)
+      .then(() => {
+        alert("學員新增成功！");
+        document.getElementById("student-form").reset();
+      })
+      .catch((error) => {
+        alert("新增失敗：" + error.message);
+      });
+  }
 });
 
 // 6. 渲染學員列表 (含修改與取消預約按鈕)
@@ -179,7 +201,7 @@ function renderStudents() {
         <div style="font-size: 0.9rem; color: #475569; margin-top: 4px;">
           套票總堂數：<strong>${totalPackage}</strong> 堂 | 
           已預約：<strong>${bookedCount}</strong> 堂 | 
-          剩餘堂數：<strong style="color: ${remainingCount > 0 ? '#16a34a' : '#dc2626'}; font-size: 1rem;">${remainingCount}</strong> 堂
+          剩餘堂數：<strong style="color: ${remainingCount >= 0 ? '#16a34a' : '#dc2626'}; font-size: 1rem;">${remainingCount}</strong> 堂
         </div>
         ${bookingsHtml}
       `;
@@ -276,7 +298,6 @@ function openEditBookingModal(studentId, bookingKey, currentDate, currentClass) 
 
   document.getElementById("booking-modal").style.display = "flex";
   
-  // 初始化日期與對應班別
   updateEditClassOptions(currentClass);
 }
 
@@ -357,7 +378,7 @@ function openBookingModal(studentId) {
   document.getElementById("modal-body").innerHTML = `
     <div style="background: #f1f5f9; padding: 10px; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem;">
       套票總額：<b>${totalPackage}</b> 堂 | 已預約：<b>${bookedCount}</b> 堂 | 
-      <span style="color: ${remainingCount > 0 ? '#16a34a' : '#dc2626'}; font-weight: bold;">剩餘堂數：${remainingCount} 堂</span>
+      <span style="color: ${remainingCount >= 0 ? '#16a34a' : '#dc2626'}; font-weight: bold;">剩餘堂數：${remainingCount} 堂</span>
     </div>
 
     <div class="form-group" style="margin-bottom: 1rem;">
