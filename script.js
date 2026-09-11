@@ -29,10 +29,14 @@ const SCHEDULE_BY_DAY = {
 
 const WEEKDAY_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
-// 工具函式：將班別字串標準化（去除星期前綴與多餘空格，便於防呆比對）
-function normalizeClassName(str) {
+// 強力標準化函式：抹去星期 prefix、空格、大小寫，只保留純粹課程名稱
+function cleanClassName(str) {
   if (!str) return "";
-  return str.toString().replace(/^(星期[一二三四五六日]\s*)/, "").replace(/\s+/g, " ").trim().toLowerCase();
+  return str.toString()
+    .replace(/^星期[一二三四五六日]\s*/, "")
+    .replace(/\s+/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 // 驗證系統密碼
@@ -384,7 +388,7 @@ function updateEditClassOptions(presetClass = "") {
   }
 }
 
-// 修改預約（強化防呆比對）
+// 修改預約（防呆比對）
 function submitEditBooking(studentId, bookingKey) {
   const newDate = document.getElementById("edit-booking-date").value;
   const newClass = document.getElementById("edit-booking-class").value;
@@ -401,20 +405,19 @@ function submitEditBooking(studentId, bookingKey) {
     return;
   }
 
-  const targetNormalizedClass = normalizeClassName(newClass);
+  const targetCleanClass = cleanClassName(newClass);
 
-  // 防呆：檢測是否與該學員的其他預約重複
   const student = studentsData[studentId];
   if (student && student.bookings) {
     const isDuplicate = Object.keys(student.bookings).some(key => {
-      if (key === bookingKey) return false; // 排除當前修改的項目
+      if (key === bookingKey) return false;
       const b = student.bookings[key];
-      const existingNormalizedClass = normalizeClassName(b.className || b.time);
-      return b.date === newDate && existingNormalizedClass === targetNormalizedClass;
+      const existingClean = cleanClassName(b.className || b.time);
+      return b.date === newDate && existingClean === targetCleanClass;
     });
 
     if (isDuplicate) {
-      alert(`⚠️ 修改失敗！該學員在 ${newDate} 已預約過【${newClass}】，無法重複預約同一天同一時段。`);
+      alert(`⚠️ 修改失敗！該學員在 ${newDate} 已預約過【${newClass.replace(/^星期[一二三四五六日]\s*/, "")}】，無法重複預約同一天同一時段。`);
       return;
     }
   }
@@ -568,7 +571,7 @@ function handleRowClassChange(index) {
   }
 }
 
-// 提交批次預約（完美防呆）
+// 提交批次預約（終極實體比對防呆）
 function submitMultipleBookings(studentId) {
   const count = parseInt(document.getElementById("booking-count").value, 10);
   const staffName = document.getElementById("booking-staff-name").value.trim();
@@ -579,59 +582,65 @@ function submitMultipleBookings(studentId) {
     return;
   }
 
-  let newBookings = [];
-  let seenSlots = new Set(); 
+  let items = [];
 
+  // 1. 抓取當前表單實體數值
   for (let i = 0; i < count; i++) {
-    const date = document.getElementById(`row-date-${i}`).value;
-    const selectedClass = document.getElementById(`row-class-${i}`).value;
+    const dateElem = document.getElementById(`row-date-${i}`);
+    const classElem = document.getElementById(`row-class-${i}`);
 
-    if (!date || !selectedClass) {
-      alert(`請完整填寫第 ${i + 1} 堂的預約內容！`);
+    const dateVal = dateElem ? dateElem.value : "";
+    const classVal = classElem ? classElem.value : "";
+
+    if (!dateVal || !classVal) {
+      alert(`⚠️ 請完整填寫第 ${i + 1} 堂的預約內容！`);
       return;
     }
 
-    // 將班別標準化後作為 Key 進行比對
-    const normClass = normalizeClassName(selectedClass);
-    const slotKey = `${date}_${normClass}`;
+    const cleanClass = cleanClassName(classVal);
 
-    // 1. 防呆：檢查這次彈窗填寫的表格中，是否有兩列或以上選擇了「相同日期 + 相同班別」
-    if (seenSlots.has(slotKey)) {
-      alert(`⚠️ 預約失敗！表單中重複選擇了相同的日期與班別：\n【${date}】 ${selectedClass.replace(/^(星期[一二三四五六日]\s*)/, "")}\n請修改重複的堂數後再試！`);
-      return;
-    }
-    seenSlots.add(slotKey);
-
-    newBookings.push({ 
-      date: date, 
-      className: selectedClass,
-      normClass: normClass,
+    items.push({
+      index: i + 1,
+      date: dateVal,
+      className: classVal,
+      cleanClass: cleanClass,
       createdBy: staffName,
       createdAt: new Date().toLocaleString("zh-TW")
     });
   }
 
-  // 2. 防呆：檢查是否與該學員「資料庫中已經預約過」的日期與時段重複
-  const student = studentsData[studentId];
-  if (student && student.bookings) {
-    const existingBookings = Object.values(student.bookings);
-    for (let nb of newBookings) {
-      const isAlreadyBooked = existingBookings.some(eb => {
-        const ebNorm = normalizeClassName(eb.className || eb.time);
-        return eb.date === nb.date && ebNorm === nb.normClass;
-      });
-
-      if (isAlreadyBooked) {
-        alert(`⚠️ 預約失敗！該學員已經在 ${nb.date} 預約過【${nb.className.replace(/^(星期[一二三四五六日]\s*)/, "")}】，請勿重複預約！`);
-        return;
+  // 2. 表單內部交叉防呆比對（兩兩比對）
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      if (items[i].date === items[j].date && items[i].cleanClass === items[j].cleanClass) {
+        alert(`⚠️ 預約失敗！表單中第 ${items[i].index} 堂與第 ${items[j].index} 堂選擇了重複的【日期與班別】:\n\n日期：${items[i].date}\n班別：${items[i].className.replace(/^星期[一二三四五六日]\s*/, "")}\n\n請修改重複的堂數！`);
+        return; // 強制終止
       }
     }
   }
 
-  // 清除用於比對的臨時屬性，寫入資料庫
-  let promises = newBookings.map(b => {
-    delete b.normClass;
-    return database.ref(`students/${studentId}/bookings`).push().set(b);
+  // 3. 資料庫已存在紀錄防呆比對
+  const student = studentsData[studentId];
+  if (student && student.bookings) {
+    const existingBookings = Object.values(student.bookings);
+    for (let item of items) {
+      const isAlreadyInDB = existingBookings.some(eb => {
+        const ebClean = cleanClassName(eb.className || eb.time);
+        return eb.date === item.date && ebClean === item.cleanClass;
+      });
+
+      if (isAlreadyInDB) {
+        alert(`⚠️ 預約失敗！該學員在 ${item.date} 已經預約過【${item.className.replace(/^星期[一二三四五六日]\s*/, "")}】，無法重複預約！`);
+        return; // 強制終止
+      }
+    }
+  }
+
+  // 4. 通過所有檢驗，寫入資料庫
+  let promises = items.map(item => {
+    delete item.index;
+    delete item.cleanClass;
+    return database.ref(`students/${studentId}/bookings`).push().set(item);
   });
 
   Promise.all(promises).then(() => {
